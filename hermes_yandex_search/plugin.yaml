@@ -1,5 +1,5 @@
 name: yandex
-version: 0.1.0
+version: 0.1.1
 description: "Yandex Search API backend: classic web search (web_search backend) plus a yandex_generative_search tool for grounded answers with citations. Requires YANDEX_API_KEY and YANDEX_FOLDER_ID."
 author: akinfold
 kind: backend
