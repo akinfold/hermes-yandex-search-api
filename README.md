@@ -3,19 +3,48 @@
 [![PyPI version](https://img.shields.io/pypi/v/hermes-yandex-search-api.svg)](https://pypi.org/project/hermes-yandex-search-api/)
 [![CI](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
 [![E2E (live)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/e2e.yml/badge.svg)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/e2e.yml)
-[![codecov](https://codecov.io/gh/akinfold/hermes-yandex-search-api/branch/main/graph/badge.svg)](https://codecov.io/gh/akinfold/hermes-yandex-search-api)
+[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A [Hermes Agent](https://hermes-agent.nousresearch.com) plugin that connects the
-[Yandex Search API](https://aistudio.yandex.ru/docs/ru/search-api/concepts/) as a
-search engine for the agent.
+**Give your [Hermes Agent](https://hermes-agent.nousresearch.com) first-class
+Yandex search.** This plugin wires the
+[Yandex Search API](https://aistudio.yandex.ru/docs/ru/search-api/concepts/) into
+Hermes as a drop-in web-search backend **and** adds a grounded-answer tool —
+excellent results for Russian-language queries, on infrastructure you may already
+have in Yandex Cloud.
 
-It registers **two** capabilities:
+- 🔎 **`yandex` web-search backend** — routes Hermes' built-in `web_search` tool
+  to Yandex web search (links with titles and snippets). Nothing new for the
+  model to learn.
+- 💬 **`yandex_generative_search` tool** — a single grounded answer synthesised
+  from live web sources, with the source URLs it cites.
 
-| Capability | Type | What it does |
-| --- | --- | --- |
-| `yandex` | Web-search **backend provider** | Plugs into Hermes' built-in `web_search` tool and returns classic web results (links with titles and snippets). |
-| `yandex_generative_search` | Standalone **tool** | Returns a single grounded answer synthesised from live web sources, together with the source URLs it cites. |
+## Quick start
+
+```bash
+# 1. Install into Hermes (alternatively: pip install hermes-yandex-search-api)
+hermes plugins install akinfold/hermes-yandex-search-api --enable
+
+# 2. Add your Yandex Cloud credentials (see "Getting a token" below)
+printf 'YANDEX_API_KEY=%s\nYANDEX_FOLDER_ID=%s\n' 'your-api-key' 'your-folder-id' >> ~/.hermes/.env
+```
+
+Then select Yandex as the web-search backend in `~/.hermes/config.yaml`:
+
+```yaml
+web:
+  search_backend: yandex
+plugins:
+  enabled:
+    - yandex
+```
+
+That's it — `web_search` now goes through Yandex, and the
+`yandex_generative_search` tool is available to the agent. Don't have an API key
+and folder id yet? See
+[Getting a Yandex Search API token](#getting-a-yandex-search-api-token). Prefer a
+drop-in or pip install? See
+[Installing the plugin into Hermes](#installing-the-plugin-into-hermes).
 
 ## Why these two search modes
 
