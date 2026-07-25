@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,12 +7,12 @@ name = "hermes-yandex-search-api"
 version = "0.1.0"
 description = "Yandex Search API plugin for Hermes Agent (web search backend + generative search tool)."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.14"
 authors = [{ name = "Roman Akinfeev" }]
 keywords = ["hermes", "hermes-agent", "yandex", "search", "plugin", "web-search"]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
