@@ -1,0 +1,49 @@
+name: E2E (live)
+
+# Manual only. Runs the end-to-end suite against the LIVE Yandex Search API
+# (and, when installable, a live Hermes Agent host). Credentials come from the
+# GitHub Environment named below — see README ("Running the live E2E tests").
+on:
+  workflow_dispatch:
+    inputs:
+      install_hermes:
+        description: "Install hermes-agent to run the live-host integration test"
+        type: boolean
+        default: true
+      search_type:
+        description: "Yandex search market override (blank = Environment var YANDEX_SEARCH_TYPE, else SEARCH_TYPE_RU)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Live end-to-end tests
+    runs-on: ubuntu-latest
+    # This Environment must define the secrets YANDEX_API_KEY and
+    # YANDEX_FOLDER_ID (and optionally the variable YANDEX_SEARCH_TYPE).
+    environment: yandex-e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project (dev extras)
+        run: python -m pip install -e '.[dev]'
+
+      - name: Install hermes-agent (optional)
+        if: ${{ inputs.install_hermes }}
+        continue-on-error: true
+        run: python -m pip install hermes-agent
+
+      - name: Run live E2E tests
+        env:
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          # Workflow input wins; otherwise fall back to an Environment variable.
+          YANDEX_SEARCH_TYPE: ${{ inputs.search_type || vars.YANDEX_SEARCH_TYPE }}
+        run: python -m pytest -m e2e -v
