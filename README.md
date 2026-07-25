@@ -4,6 +4,7 @@
 [![CI](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
 [![E2E (live)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/e2e.yml/badge.svg)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/e2e.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/badges/coverage.json&v=1)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
+[![CodeFactor](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api/badge)](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 **Give your [Hermes Agent](https://hermes-agent.nousresearch.com) first-class
