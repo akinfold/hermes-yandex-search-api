@@ -26,9 +26,9 @@ jobs:
     # YANDEX_FOLDER_ID (and optionally the variable YANDEX_SEARCH_TYPE).
     environment: yandex-e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
