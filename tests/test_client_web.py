@@ -150,8 +150,8 @@ def test_raw_data_survives_roundtrip() -> None:
 
 def test_parse_web_xml_url_as_attribute() -> None:
     xml = (
-        '<yandexsearch><response><results><grouping><group>'
-        '<doc url="https://attr.example/x"><title>Attr URL</title></doc>'
+        "<yandexsearch><response><results><grouping><group>"
+        "<doc url='https://attr.example/x'><title>Attr URL</title></doc>"
         "</group></grouping></results></response></yandexsearch>"
     )
     results = _parse_web_xml(xml.encode("utf-8"))
@@ -162,7 +162,7 @@ def test_parse_web_xml_url_as_attribute() -> None:
 
 def test_parse_web_xml_is_namespace_tolerant() -> None:
     xml = (
-        '<yandexsearch xmlns="urn:yandex:search"><response><results><grouping>'
+        "<yandexsearch xmlns='urn:yandex:search'><response><results><grouping>"
         "<group><doc><url>https://ns.example/y</url><title>NS Result</title></doc>"
         "</group></grouping></results></response></yandexsearch>"
     )
