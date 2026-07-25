@@ -226,40 +226,10 @@ Environment once:
    approved — this gates access to the paid API.
 5. Run the workflow from the **Actions** tab.
 
-## Releases and publishing
-
-Hermes plugins are distributed in two places, and this repo automates both:
-
-- **As a Git repository**, installable with `hermes plugins install akinfold/hermes-yandex-search-api`.
-- **On PyPI** as `hermes-yandex-search-api`, discovered through the
-  `hermes_agent.plugins` entry point.
-
-Workflows:
-
-- `release-build.yml` — builds the wheel, sdist, and the drop-in plugin `.zip`
-  (reusable; also runnable manually).
-- `release-publish.yml` — on a `v*` tag, builds the artifacts, creates a GitHub
-  Release with them attached, and (optionally) publishes to PyPI.
-
-To cut a release:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-PyPI publishing is opt-in: set the repository variable `PUBLISH_TO_PYPI=true` and
-configure a [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/)
-for the `release-publish.yml` workflow (environment `pypi`). Without it, releases
-still build and attach artifacts to the GitHub Release.
-
-To list the plugin in the community index, submit it to
-[awesome-hermes-agent](https://github.com/0xNyk/awesome-hermes-agent).
-
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
-setup, checks to run, and the release process.
+setup and checks to run.
 
 ## License
 

@@ -62,14 +62,6 @@ env vars or local files, then run `pytest -m e2e` — see the README section
 - For user-facing changes, update the README and add a note to the PR
   description.
 
-## Releasing (maintainers)
-
-1. Bump the version in `pyproject.toml`, `hermes_yandex_search/__init__.py`,
-   and `hermes_yandex_search/plugin.yaml` (keep them in sync).
-2. Commit, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. The `release-publish` workflow builds artifacts, creates a GitHub Release,
-   and publishes to PyPI (after the `pypi` environment approval).
-
 ## Reporting security issues
 
 Please do not open public issues for security-sensitive reports. Contact the
