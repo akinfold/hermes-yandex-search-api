@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Hermes Agent documentation
+    url: https://hermes-agent.nousresearch.com/docs/
+    about: How Hermes Agent, plugins, and web-search backends work.
+  - name: Yandex Search API documentation
+    url: https://aistudio.yandex.ru/docs/ru/search-api/concepts/
+    about: Endpoints, quotas, pricing, and how to get an API key / folder id.

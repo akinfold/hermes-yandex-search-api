@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a problem with the plugin
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in the details below.
+        Do **not** paste your Yandex API key or folder id anywhere in this report.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I run web_search with the yandex backend, ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install the plugin with ...
+        2. Set web.search_backend: yandex
+        3. Ask the agent to ...
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes Agent version
+      placeholder: "0.19.0"
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: dropdown
+    id: search-mode
+    attributes:
+      label: Which capability?
+      options:
+        - web_search backend (yandex)
+        - yandex_generative_search tool
+        - both / not sure
+    validations:
+      required: true
+  - type: input
+    id: search-type
+    attributes:
+      label: YANDEX_SEARCH_TYPE (if set)
+      placeholder: SEARCH_TYPE_RU
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / error output
+      description: Paste the error message or the tool's JSON error. Redact secrets.
+      render: shell

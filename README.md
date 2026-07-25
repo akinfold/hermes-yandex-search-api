@@ -256,6 +256,11 @@ still build and attach artifacts to the GitHub Release.
 To list the plugin in the community index, submit it to
 [awesome-hermes-agent](https://github.com/0xNyk/awesome-hermes-agent).
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+setup, checks to run, and the release process.
+
 ## License
 
 [MIT](LICENSE) © Roman Akinfeev
