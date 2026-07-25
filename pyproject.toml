@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-yandex-search-api"
-version = "0.1.1"
+version = "0.1.2"
 description = "Yandex Search API plugin for Hermes Agent (web search backend + generative search tool)."
 readme = "README.md"
 license = "MIT"
@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.24",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]

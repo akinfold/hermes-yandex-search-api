@@ -24,9 +24,11 @@ import base64
 import binascii
 from dataclasses import dataclass, field
 from typing import Any
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree as ET  # nosec B405 - parsing uses defusedxml
 
 import httpx
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 DEFAULT_BASE_URL = "https://searchapi.api.cloud.yandex.net"
 DEFAULT_SEARCH_TYPE = "SEARCH_TYPE_RU"
@@ -333,9 +335,15 @@ def _strip_namespaces(root: ET.Element) -> None:
 
 
 def _parse_web_xml(raw: bytes) -> list[WebResult]:
-    """Parse the ``<yandexsearch>`` XML document into :class:`WebResult` items."""
+    """Parse the ``<yandexsearch>`` XML document into :class:`WebResult` items.
+
+    Uses :mod:`defusedxml` so a malicious response cannot mount an entity-
+    expansion (billion-laughs) or external-entity (XXE) attack.
+    """
     try:
-        root = ET.fromstring(raw)
+        root = _safe_fromstring(raw)
+    except DefusedXmlException as exc:
+        raise YandexSearchError(f"Rejected unsafe Yandex XML response: {exc}") from exc
     except ET.ParseError as exc:
         raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
 
