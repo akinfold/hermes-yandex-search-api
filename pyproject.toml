@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hermes-yandex-search-api"
+version = "0.1.0"
+description = "Yandex Search API plugin for Hermes Agent (web search backend + generative search tool)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.14"
+authors = [{ name = "Roman Akinfeev" }]
+keywords = ["hermes", "hermes-agent", "yandex", "search", "plugin", "web-search"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = [
+    "httpx>=0.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/akinfold/hermes-yandex-search-api"
+Repository = "https://github.com/akinfold/hermes-yandex-search-api"
+Issues = "https://github.com/akinfold/hermes-yandex-search-api/issues"
+
+# Hermes discovers pip-installed plugins through this entry-point group. The
+# value is the MODULE that exposes ``register(ctx)`` (Hermes calls
+# ``getattr(module, "register")``), so it must not include a ``:register`` suffix.
+[project.entry-points."hermes_agent.plugins"]
+yandex = "hermes_yandex_search"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hermes_yandex_search"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"hermes_yandex_search/plugin.yaml" = "hermes_yandex_search/plugin.yaml"
+"hermes_yandex_search/py.typed" = "hermes_yandex_search/py.typed"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "hermes_yandex_search",
+    "tests",
+    "README.md",
+    "LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests that hit the live Yandex Search API (deselected by default).",
+]
+addopts = "-m 'not e2e'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["hermes_yandex_search", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "RUF",  # ruff-specific rules
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"

@@ -1,0 +1,64 @@
+name: Build release artifacts
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      version:
+        description: "Project version that was built"
+        value: ${{ jobs.build.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install build
+
+      - name: Read project version
+        id: version
+        run: |
+          version=$(python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Assemble drop-in plugin archive
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          rm -rf dropin && mkdir -p dropin/yandex
+          # A drop-in install is a directory named after the provider that holds
+          # plugin.yaml + the plugin's Python modules. Copy the package sources
+          # (dir plugins are loaded as a package, so relative imports resolve).
+          cp -r hermes_yandex_search/. dropin/yandex/
+          find dropin -name '__pycache__' -type d -prune -exec rm -rf {} +
+          ( cd dropin && zip -r "../dist/hermes-yandex-search-plugin-${version}.zip" yandex )
+          echo "Drop-in archive contents:" && unzip -l "dist/hermes-yandex-search-plugin-${version}.zip"
+
+      - name: Verify wheel imports and exposes register()
+        run: |
+          set -euo pipefail
+          python -m pip install dist/*.whl
+          python -c "import hermes_yandex_search as p; assert callable(p.register); print('register OK, version', p.__version__)"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/*
+          if-no-files-found: error
