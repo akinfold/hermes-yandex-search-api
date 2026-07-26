@@ -72,27 +72,31 @@ def handle_generative_search(args: dict[str, Any], **_kwargs: Any) -> str:
         with client:
             answer = client.generative_search(query=query, sites=sites)
 
-        return json.dumps(
-            {
-                "success": True,
-                "answer": answer.text,
-                "sources": [
-                    {"url": s.url, "title": s.title, "used_text": s.used_text}
-                    for s in answer.sources
-                ],
-                "search_queries": answer.search_queries,
-                "fixed_query": answer.fixed_query,
-                "is_answer_rejected": answer.is_answer_rejected,
-                "is_bullet_answer": answer.is_bullet_answer,
-            },
-            ensure_ascii=False,
-        )
+        return _success(answer)
     except YandexSearchError as exc:
         logger.warning("Yandex generative search error: %s", exc)
         return _error(str(exc))
     except Exception as exc:
         logger.warning("Yandex generative search failed: %s", exc)
         return _error(f"Yandex generative search failed: {exc}")
+
+
+def _success(answer) -> str:
+    """Serialize a successful answer into the tool's JSON envelope."""
+    return json.dumps(
+        {
+            "success": True,
+            "answer": answer.text,
+            "sources": [
+                {"url": s.url, "title": s.title, "used_text": s.used_text} for s in answer.sources
+            ],
+            "search_queries": answer.search_queries,
+            "fixed_query": answer.fixed_query,
+            "is_answer_rejected": answer.is_answer_rejected,
+            "is_bullet_answer": answer.is_bullet_answer,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _error(message: str) -> str:

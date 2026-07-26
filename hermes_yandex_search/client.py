@@ -334,6 +334,13 @@ def _strip_namespaces(root: ET.Element) -> None:
             element.tag = element.tag.rsplit("}", 1)[1]
 
 
+def _raise_for_xml_error(root: ET.Element) -> None:
+    """Yandex sometimes reports failures inside the XML envelope rather than by status."""
+    error = root.find("./response/error")
+    if error is not None and (error.text or "").strip():
+        raise YandexSearchError(f"Yandex search error: {error.text.strip()}")
+
+
 def _parse_web_xml(raw: bytes) -> list[WebResult]:
     """Parse the ``<yandexsearch>`` XML document into :class:`WebResult` items.
 
@@ -348,29 +355,20 @@ def _parse_web_xml(raw: bytes) -> list[WebResult]:
         raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
 
     _strip_namespaces(root)
-
-    # Yandex sometimes reports errors inside the XML envelope.
-    error = root.find("./response/error")
-    if error is not None and (error.text or "").strip():
-        raise YandexSearchError(f"Yandex search error: {error.text.strip()}")
+    _raise_for_xml_error(root)
 
     results: list[WebResult] = []
-    position = 0
     for doc in root.findall("./response/results/grouping/group/doc"):
         url = _element_text(doc.find("url")) or (doc.get("url") or "")
         if not url:
             continue
-        position += 1
-        title = _element_text(doc.find("title")) or url
-        domain = _element_text(doc.find("domain"))
-        description = _extract_description(doc)
         results.append(
             WebResult(
-                title=title,
+                title=_element_text(doc.find("title")) or url,
                 url=url,
-                description=description,
-                domain=domain,
-                position=position,
+                description=_extract_description(doc),
+                domain=_element_text(doc.find("domain")),
+                position=len(results) + 1,
             )
         )
     return results
@@ -385,6 +383,30 @@ def _extract_description(doc: ET.Element) -> str:
     return _element_text(doc.find("headline"))
 
 
+def _generative_sources(raw: Any) -> list[GenerativeSource]:
+    """The cited sources, skipping anything that is not an object."""
+    return [
+        GenerativeSource(
+            url=src.get("url", ""),
+            title=src.get("title", ""),
+            used_text=src.get("usedText", ""),
+        )
+        for src in (raw or [])
+        if isinstance(src, dict)
+    ]
+
+
+def _generative_queries(raw: Any) -> list[str]:
+    """The queries Yandex actually ran; entries arrive as objects or bare strings."""
+    queries: list[str] = []
+    for item in raw or []:
+        if isinstance(item, dict) and item.get("text"):
+            queries.append(item["text"])
+        elif isinstance(item, str):
+            queries.append(item)
+    return queries
+
+
 def _parse_generative(data: Any) -> GenerativeAnswer:
     """Parse a ``GenSearchResponse`` (or a 1-element array wrapping one)."""
     if isinstance(data, list):
@@ -397,29 +419,10 @@ def _parse_generative(data: Any) -> GenerativeAnswer:
     message = data.get("message") or {}
     text = message.get("content", "") if isinstance(message, dict) else ""
 
-    sources: list[GenerativeSource] = []
-    for src in data.get("sources", []) or []:
-        if not isinstance(src, dict):
-            continue
-        sources.append(
-            GenerativeSource(
-                url=src.get("url", ""),
-                title=src.get("title", ""),
-                used_text=src.get("usedText", ""),
-            )
-        )
-
-    queries: list[str] = []
-    for item in data.get("searchQueries", []) or []:
-        if isinstance(item, dict) and item.get("text"):
-            queries.append(item["text"])
-        elif isinstance(item, str):
-            queries.append(item)
-
     return GenerativeAnswer(
         text=text,
-        sources=sources,
-        search_queries=queries,
+        sources=_generative_sources(data.get("sources")),
+        search_queries=_generative_queries(data.get("searchQueries")),
         fixed_query=data.get("fixedMisspellQuery", "") or "",
         is_answer_rejected=bool(data.get("isAnswerRejected", False)),
         is_bullet_answer=bool(data.get("isBulletAnswer", False)),

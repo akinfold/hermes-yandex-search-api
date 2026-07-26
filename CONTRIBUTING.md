@@ -42,9 +42,13 @@ pip install -e '.[dev]'
 ruff check .            # lint
 ruff format --check .   # code style (run `ruff format .` to fix)
 pytest                  # unit tests; live e2e tests are deselected by default
+radon cc -s -n C hermes_yandex_search   # complexity; must print nothing
 ```
 
 Please keep coverage from regressing — add tests for new code and error paths.
+
+CI also fails on any function radon rates **C or worse** — split it rather than
+raising the bar. `radon cc -a hermes_yandex_search` shows the average.
 
 ### Running the live e2e tests (optional)
 
