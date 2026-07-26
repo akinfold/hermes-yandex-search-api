@@ -256,6 +256,14 @@ Environment once:
    approved — this gates access to the paid API.
 5. Run the workflow from the **Actions** tab.
 
+## Related Hermes plugins
+
+Part of a family of Yandex plugins for Hermes Agent:
+
+- [hermes-yandex-disk](https://github.com/akinfold/hermes-yandex-disk) — browse, read, write, and share files on Yandex Disk (REST API).
+- [hermes-yandex-mail](https://github.com/akinfold/hermes-yandex-mail) — search, read, flag, move, and delete Yandex Mail messages (IMAP).
+- [hermes-yandex-calendar](https://github.com/akinfold/hermes-yandex-calendar) — list, create, update, respond to, move, and delete Yandex Calendar events (CalDAV).
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
