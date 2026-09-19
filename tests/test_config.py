@@ -54,3 +54,9 @@ def test_credentials_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("YANDEX_API_KEY", "k")
     monkeypatch.setenv("YANDEX_FOLDER_ID", "f")
     assert config.credentials_present() is True
+
+
+def test_env_var_names_are_pinned() -> None:
+    """The names are user-facing configuration; a refactor must not move them."""
+    assert config.API_KEY_ENV == "YANDEX_API_KEY"
+    assert config.FOLDER_ID_ENV == "YANDEX_FOLDER_ID"
