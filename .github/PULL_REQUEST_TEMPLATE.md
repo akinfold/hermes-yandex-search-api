@@ -17,6 +17,7 @@
 - [ ] `ruff check .` passes
 - [ ] `ruff format --check .` passes
 - [ ] `pytest` passes and new code / error paths are covered by tests
+- [ ] `radon cc -s -n C hermes_yandex_search` prints nothing (no function rated C or worse)
 - [ ] README / docs updated for any user-facing change
 - [ ] `client.py` still has no Hermes imports (host code lives elsewhere)
 

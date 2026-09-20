@@ -90,6 +90,9 @@ default).
 
 - Hermes Agent `>= 0.19` (tested against 0.19.x).
 - Python `>= 3.11, < 3.14`.
+- The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (pip)
+  installs both; `httpx` already ships with Hermes, but for Option A or B you have
+  to install `defusedxml` yourself — see the note under Option B.
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 
@@ -117,8 +120,16 @@ You now have the two values the plugin needs: `YANDEX_API_KEY` and
 ### Option A — install from Git (recommended)
 
 ```bash
-hermes plugins install akinfold/hermes-yandex-search-api --enable
+hermes plugins install akinfold/hermes-yandex-search-api
 ```
+
+This repository keeps its manifest in the `hermes_yandex_search/` directory rather
+than at the root, so Hermes does not read it at install time: it may warn that the
+installed directory "doesn't contain plugin.yaml, plugin.json, or `__init__.py`", it
+does not prompt for the credentials, and `--enable` would enable the repository name
+instead of the plugin. Enable it by adding `yandex` under `plugins.enabled` in
+`~/.hermes/config.yaml`, as shown in
+[Configuring the token in Hermes](#configuring-the-token-in-hermes).
 
 ### Option B — drop-in directory
 
@@ -134,6 +145,16 @@ hermes plugins enable yandex
 (Or download `hermes-yandex-search-plugin-<version>.zip` from a
 [GitHub Release](https://github.com/akinfold/hermes-yandex-search-api/releases)
 and unzip it into `~/.hermes/plugins/web/`.)
+
+> **Options A and B need `defusedxml` installed by hand.** Both copy the plugin's
+> sources only, and current Hermes releases do not install a plugin's Python
+> dependencies. `httpx` ships with Hermes; `defusedxml` does not, so without it the
+> plugin fails to load with `ModuleNotFoundError: No module named 'defusedxml'`.
+> Install it into the environment Hermes runs in:
+>
+> ```bash
+> pip install 'defusedxml>=0.7'
+> ```
 
 ### Option C — pip
 
@@ -160,8 +181,10 @@ YANDEX_SEARCH_TYPE=SEARCH_TYPE_RU
 # YANDEX_SEARCH_API_URL=https://searchapi.api.cloud.yandex.net
 ```
 
-`hermes plugins install ... --enable` will also prompt for the values declared in
-the plugin manifest (`YANDEX_API_KEY`, `YANDEX_FOLDER_ID`) during installation.
+`hermes plugins install` does not prompt for these values here: Hermes reads a
+plugin manifest from the root of the cloned repository, and this one lives in the
+`hermes_yandex_search/` subdirectory. Add both variables to `~/.hermes/.env`
+yourself, as shown above.
 
 ### Selecting Yandex as the web-search backend
 
@@ -176,8 +199,48 @@ plugins:
     - yandex
 ```
 
+The `yandex` backend is search-only: the Yandex Search API returns result
+snippets, not page content, so the plugin does not serve `web_extract`. Page
+extraction keeps using whichever extract-capable backend Hermes resolves, which
+is why the snippet above sets `web.search_backend` rather than `web.backend`.
+
 The `yandex_generative_search` tool becomes available as soon as the plugin is
-enabled — no extra configuration needed.
+enabled — no extra configuration needed. It is registered in the `yandex_search`
+toolset, which Hermes enables by default; you can switch it off (or back on) per
+platform with `hermes tools`.
+
+## The `yandex_generative_search` tool
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query` | string | yes | The question to answer. Must be a non-empty string. |
+| `sites` | array of strings | no | Site domains to restrict the answer's sources to, e.g. `["example.com"]`. The Yandex API accepts up to 5; the plugin forwards the list as it is. Omit it to search the whole web. |
+
+The search market is not a tool parameter; it comes from `YANDEX_SEARCH_TYPE`.
+
+The tool returns a JSON string. On success:
+
+```json
+{
+  "success": true,
+  "answer": "Paris is the capital of France.",
+  "sources": [{"url": "https://en.wikipedia.org/wiki/Paris", "title": "Paris", "used_text": ""}],
+  "search_queries": ["capital of France"],
+  "fixed_query": "",
+  "is_answer_rejected": false,
+  "is_bullet_answer": false
+}
+```
+
+- `answer` — the synthesised answer text.
+- `sources` — the sources the answer cites (`url`, `title`, `used_text`; the last two may be empty).
+- `search_queries` — the queries Yandex actually ran.
+- `fixed_query` — the typo-corrected query, or an empty string.
+- `is_answer_rejected` — `true` when Yandex declined to answer.
+- `is_bullet_answer` — `true` when the answer is formatted as a bullet list.
+
+The tool never raises. Any failure — missing credentials, invalid arguments, an
+HTTP or API error — comes back as `{"success": false, "error": "<message>"}`.
 
 ## Configuration reference
 
@@ -188,6 +251,17 @@ enabled — no extra configuration needed.
 | `YANDEX_SEARCH_TYPE` | no | `SEARCH_TYPE_RU` | Search market/domain enum. |
 | `YANDEX_SEARCH_API_URL` | no | `https://searchapi.api.cloud.yandex.net` | API base URL override. |
 
+`YANDEX_SEARCH_TYPE` applies to both web and generative search and is case-sensitive:
+an unrecognised value makes every call fail with an error naming the accepted values.
+
+The rest of the request options are fixed and cannot be configured. Every request
+times out after 30 seconds, and on expiry the call fails with an error such as
+`HTTP request to /v2/gen/search failed: ...`. Web search returns at most the number
+of results Hermes asks for (clamped to 1–100), one document per site group, first
+page only. The family filter stays at `FAMILY_MODE_MODERATE`, Yandex typo correction
+is always on for both modes, and region and snippet localisation are left at the
+Yandex defaults for the selected market.
+
 ## Development
 
 ```bash
@@ -197,6 +271,7 @@ pip install -e '.[dev]'
 ruff check .          # lint
 ruff format --check . # code style
 pytest                # unit tests (live E2E tests are deselected by default)
+radon cc -s -n C hermes_yandex_search  # complexity gate; must print nothing
 ```
 
 The package layout separates a Hermes-independent API client from the host
@@ -261,7 +336,7 @@ Environment once:
 Part of a family of Yandex plugins for Hermes Agent:
 
 - [hermes-yandex-disk](https://github.com/akinfold/hermes-yandex-disk) — browse, read, write, and share files on Yandex Disk (REST API).
-- [hermes-yandex-mail](https://github.com/akinfold/hermes-yandex-mail) — search, read, flag, move, and delete Yandex Mail messages (IMAP).
+- [hermes-yandex-mail](https://github.com/akinfold/hermes-yandex-mail) — search, read, flag, move, and delete Yandex Mail messages over IMAP, and send over SMTP when sending is switched on.
 - [hermes-yandex-calendar](https://github.com/akinfold/hermes-yandex-calendar) — list, create, update, respond to, move, and delete Yandex Calendar events (CalDAV).
 
 ## Contributing

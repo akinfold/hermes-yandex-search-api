@@ -45,7 +45,14 @@ pytest                  # unit tests; live e2e tests are deselected by default
 radon cc -s -n C hermes_yandex_search   # complexity; must print nothing
 ```
 
-Please keep coverage from regressing — add tests for new code and error paths.
+CI runs the unit tests with coverage and **fails below 90% total coverage**.
+Reproduce that gate locally with:
+
+```bash
+pytest --cov=hermes_yandex_search --cov-report=term-missing --cov-fail-under=90
+```
+
+Add tests for new code and error paths so coverage does not regress.
 
 CI also fails on any function radon rates **C or worse** — split it rather than
 raising the bar. `radon cc -a hermes_yandex_search` shows the average.
