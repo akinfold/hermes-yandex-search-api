@@ -24,7 +24,7 @@ have in Yandex Cloud.
 
 ```bash
 # 1. Install into Hermes (alternatively: pip install hermes-yandex-search-api)
-hermes plugins install akinfold/hermes-yandex-search-api --enable
+hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable
 
 # 2. Add your Yandex Cloud credentials (see "Getting a token" below)
 printf 'YANDEX_API_KEY=%s\nYANDEX_FOLDER_ID=%s\n' 'your-api-key' 'your-folder-id' >> ~/.hermes/.env
@@ -120,16 +120,22 @@ You now have the two values the plugin needs: `YANDEX_API_KEY` and
 ### Option A — install from Git (recommended)
 
 ```bash
-hermes plugins install akinfold/hermes-yandex-search-api
+hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable
 ```
 
-This repository keeps its manifest in the `hermes_yandex_search/` directory rather
-than at the root, so Hermes does not read it at install time: it may warn that the
-installed directory "doesn't contain plugin.yaml, plugin.json, or `__init__.py`", it
-does not prompt for the credentials, and `--enable` would enable the repository name
-instead of the plugin. Enable it by adding `yandex` under `plugins.enabled` in
-`~/.hermes/config.yaml`, as shown in
-[Configuring the token in Hermes](#configuring-the-token-in-hermes).
+Note the `/hermes_yandex_search` at the end. The plugin lives in that directory,
+not at the repository root, and Hermes reads the manifest from whatever you point
+it at. Name the directory and the install is a plugin: Hermes prompts for
+`YANDEX_API_KEY` and `YANDEX_FOLDER_ID`, installs under the manifest name
+`yandex`, and `--enable` enables that name. It also scans only that directory, so
+the tests and workflows in this repository stay out of the security report.
+
+Point it at the repository root instead and the install still appears to succeed,
+but it copies a directory with no manifest and no `register(ctx)` in it: Hermes
+warns that it "may not be a valid Hermes plugin", asks for nothing, and enables
+the repository name, which nothing answers to. If you installed that way, remove
+`~/.hermes/plugins/hermes-yandex-search-api` and install again with the directory
+named.
 
 ### Option B — drop-in directory
 
@@ -181,10 +187,10 @@ YANDEX_SEARCH_TYPE=SEARCH_TYPE_RU
 # YANDEX_SEARCH_API_URL=https://searchapi.api.cloud.yandex.net
 ```
 
-`hermes plugins install` does not prompt for these values here: Hermes reads a
-plugin manifest from the root of the cloned repository, and this one lives in the
-`hermes_yandex_search/` subdirectory. Add both variables to `~/.hermes/.env`
-yourself, as shown above.
+`hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search`
+prompts for both values, because the manifest declares them. Installing any other
+way, or declining the prompt, leaves you to add them to `~/.hermes/.env` yourself,
+as shown above.
 
 ### Selecting Yandex as the web-search backend
 
