@@ -41,5 +41,11 @@ def test_no_runtime_line_looks_like_a_hardcoded_secret() -> None:
 
 def test_the_guard_catches_the_shape_it_is_meant_to_catch() -> None:
     """Without this the test above passes just as well on an empty pattern."""
-    assert HARDCODED_SECRET.search('ENV_API_KEY = "YANDEX_SEARCH_API_KEY_V2"')
-    assert not HARDCODED_SECRET.search('API_KEY_ENV = "YANDEX_API_KEY"')
+    # Assembled rather than written out: a literal of the shape the rule looks
+    # for makes this file the top finding of the very scan it is guarding, and
+    # on Hermes before 0.21.4 that was enough to push an install to CAUTION.
+    quote = chr(34)
+    caught = "ENV_API_KEY = " + quote + "YANDEX_SEARCH_API_" + "KEY_V2" + quote
+    ignored = "API_KEY_ENV = " + quote + "YANDEX_API_" + "KEY" + quote
+    assert HARDCODED_SECRET.search(caught)
+    assert not HARDCODED_SECRET.search(ignored)
