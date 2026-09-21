@@ -133,9 +133,13 @@ the tests and workflows in this repository stay out of the security report.
 Point it at the repository root instead and the install still appears to succeed,
 but it copies a directory with no manifest and no `register(ctx)` in it: Hermes
 warns that it "may not be a valid Hermes plugin", asks for nothing, and enables
-the repository name, which nothing answers to. If you installed that way, remove
-`~/.hermes/plugins/hermes-yandex-search-api` and install again with the directory
-named.
+the repository name, which nothing answers to. There is no error to look for:
+what gives it away is `hermes plugins list`, which shows the plugin under its
+real name with `not enabled` beside it, because `--enable` wrote the repository
+name into `plugins.enabled` and nothing matches it. If you are in that state,
+remove `~/.hermes/plugins/hermes-yandex-search-api` and install again with the
+directory named — enabling the real name on top of the broken install leaves a
+stray entry behind.
 
 ### Option B — drop-in directory
 
