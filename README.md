@@ -351,15 +351,28 @@ pytest -m e2e -v
 ```
 
 The Hermes-host test (`tests/e2e/test_live_hermes.py`) skips automatically unless
-`hermes-agent` is importable; install it with `pip install hermes-agent` to run
-it.
+Hermes is importable. The `hermes-agent` on PyPI is far behind the Hermes users
+run, so use the Python of a real Hermes install instead. With the standard one:
+
+```bash
+~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python -e . pytest
+~/.hermes/hermes-agent/venv/bin/python -m pytest -m e2e -v
+```
+
+That installs this checkout into your Hermes as a PyPI-style plugin; remove it
+afterwards with `~/.hermes/bin/uv pip uninstall --python
+~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api`.
 
 ### On GitHub Actions
 
 The **E2E (live)** workflow (`.github/workflows/e2e.yml`) is manual
 (*Actions → E2E (live) → Run workflow*). It reads credentials from a GitHub
 [Environment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
-so they are never committed to the repo.
+so they are never committed to the repo. It runs the plugin inside a real Hermes,
+set up the way the Hermes installer sets it up: the latest Hermes release by
+default, and its `hermes` input switches to Hermes `main` or to no Hermes at all.
+With Hermes, the run fails outright if the plugin cannot import it, rather than
+skipping the Hermes-host test.
 
 If you fork this repository and want to run the live E2E workflow, set up the
 Environment once:

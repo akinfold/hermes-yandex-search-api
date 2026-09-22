@@ -1,15 +1,21 @@
 name: E2E (live)
 
-# Manual only. Runs the end-to-end suite against the LIVE Yandex Search API
-# (and, when installable, a live Hermes Agent host). Credentials come from the
-# GitHub Environment named below — see README ("Running the live E2E tests").
+# Manual only. Runs the end-to-end suite against the LIVE Yandex Search API.
+# Credentials come from the GitHub Environment named below — see README
+# ("Running the live E2E tests").
+#
+# The plugin runs inside a real Hermes, set up the way its installer sets it up
+# (see .github/actions/setup-hermes): the latest release by default, or main,
+# which is what the installer checks out. `none` runs it on its own, on the
+# stand-ins in _compat.py.
 on:
   workflow_dispatch:
     inputs:
-      install_hermes:
-        description: "Install hermes-agent to run the live-host integration test"
-        type: boolean
-        default: true
+      hermes:
+        description: "Hermes to run the plugin in"
+        type: choice
+        options: [release, main, none]
+        default: release
       search_type:
         description: "Yandex search market override (blank = Environment var YANDEX_SEARCH_TYPE, else SEARCH_TYPE_RU)"
         type: string
@@ -32,13 +38,29 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install project (dev extras)
-        run: python -m pip install -e '.[dev]'
+      - name: Set up Hermes the way its installer does
+        id: hermes
+        if: inputs.hermes != 'none'
+        uses: ./.github/actions/setup-hermes
+        with:
+          channel: ${{ inputs.hermes }}
 
-      - name: Install hermes-agent (optional)
-        if: ${{ inputs.install_hermes }}
-        continue-on-error: true
-        run: python -m pip install hermes-agent
+      - name: Install the plugin into Hermes' virtualenv
+        if: inputs.hermes != 'none'
+        env:
+          HERMES_PYTHON: ${{ steps.hermes.outputs.python }}
+        run: |
+          set -euo pipefail
+          uv pip install --quiet --python "$HERMES_PYTHON" -e . pytest
+          # Hermes' own code, or a failed run: never a quiet fallback to the stand-ins.
+          "$HERMES_PYTHON" -c "from hermes_yandex_search._compat import HERMES_AVAILABLE; assert HERMES_AVAILABLE, 'the plugin cannot import Hermes'"
+          echo "E2E_PYTHON=$HERMES_PYTHON" >> "$GITHUB_ENV"
+
+      - name: Install the plugin on its own
+        if: inputs.hermes == 'none'
+        run: |
+          python -m pip install -e '.[dev]'
+          echo "E2E_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
 
       - name: Run live E2E tests
         env:
@@ -46,4 +68,4 @@ jobs:
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
           # Workflow input wins; otherwise fall back to an Environment variable.
           YANDEX_SEARCH_TYPE: ${{ inputs.search_type || vars.YANDEX_SEARCH_TYPE }}
-        run: python -m pytest -m e2e -v
+        run: '"$E2E_PYTHON" -m pytest -m e2e -v'
