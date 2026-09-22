@@ -23,6 +23,7 @@ hermes_yandex_search/
   __init__.py     # register(ctx) — the plugin entry point
 tests/            # unit tests (no network, httpx.MockTransport)
 tests/e2e/        # live tests (Yandex API + Hermes host), marked `e2e`
+tests/install/    # installs the build into a real Hermes by every README route, marked `install`
 ```
 
 Keep `client.py` free of any Hermes imports so it stays unit-testable in
@@ -62,6 +63,19 @@ raising the bar. `radon cc -a hermes_yandex_search` shows the average.
 The `e2e`-marked tests hit the live Yandex Search API. Provide credentials via
 env vars or local files, then run `pytest -m e2e` — see the README section
 "Running the live E2E tests" for details.
+
+### The install check
+
+`tests/install/`, marked `install`, installs the built wheel, the drop-in archive,
+a copy of the plugin directory, and the Git tree into a real Hermes, set up the
+way the Hermes installer sets it up, using the commands the README gives, and asks
+Hermes what it loaded. Change an install instruction in the README and you change
+the test: `test_readme_gives_the_commands_under_test`, which runs with the unit
+tests, fails until the two agree. The **Install check** workflow runs it on every
+pull request against the latest Hermes release and against Hermes `main`, and the
+release workflow runs it on the artifacts it has just built: the GitHub Release
+and the PyPI upload wait for it. The docstring of `tests/install/test_install.py`
+says how to run it locally.
 
 ## Commit & PR conventions
 

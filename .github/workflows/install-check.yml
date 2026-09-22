@@ -1,0 +1,70 @@
+# Installs the build into a real Hermes by every route README.md documents, and
+# checks what Hermes then loaded — see tests/install/test_install.py. Called by
+# ci.yml on every pull request, and by release-publish.yml before anything is
+# published. Needs the `release-artifacts` artifact of the calling run.
+#
+# Hermes is set up the way its official installer sets it up: a git checkout,
+# a Python 3.11 virtualenv built with `uv sync --extra all --locked`, and uv
+# beside it. Once from the latest Hermes release and once from main, which is
+# what the installer and `hermes update` check out by default.
+name: Install check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.route }} on Hermes ${{ matrix.hermes }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hermes: [release, main]
+        route: [git, pypi, copy, dropin, root]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Download the build under test
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts
+          path: dist
+      - run: python -m pip install -e '.[dev]' uv
+      - name: Resolve the Hermes ref
+        id: hermes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ matrix.hermes }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = release ]; then
+            ref=$(gh api repos/NousResearch/hermes-agent/releases/latest --jq .tag_name)
+          else
+            ref=main
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Set up Hermes the way its installer does
+        env:
+          REF: ${{ steps.hermes.outputs.ref }}
+        run: |
+          set -euo pipefail
+          checkout="$RUNNER_TEMP/hermes-agent"
+          git clone --quiet --depth 1 --branch "$REF" \
+            https://github.com/NousResearch/hermes-agent.git "$checkout"
+          cd "$checkout"
+          uv venv --quiet venv --python 3.11
+          UV_PROJECT_ENVIRONMENT="$checkout/venv" uv sync --quiet --extra all --locked
+          version=$(HERMES_HOME="$RUNNER_TEMP/hermes-version" venv/bin/hermes --version | head -1)
+          echo "$version, $REF at $(git rev-parse --short HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Install by the ${{ matrix.route }} route and check what Hermes loaded
+        env:
+          HERMES_CHECKOUT: ${{ runner.temp }}/hermes-agent
+          INSTALL_DIST: dist
+          INSTALL_REF: ${{ github.sha }}
+          ROUTE: ${{ matrix.route }}
+        run: UV="$(command -v uv)" python -m pytest -m install -k "$ROUTE" -v -p no:cacheprovider
