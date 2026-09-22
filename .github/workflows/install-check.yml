@@ -58,7 +58,12 @@ jobs:
             https://github.com/NousResearch/hermes-agent.git "$checkout"
           cd "$checkout"
           uv venv --quiet venv --python 3.11
-          UV_PROJECT_ENVIRONMENT="$checkout/venv" uv sync --quiet --extra all --locked
+          # The installer's first choice, then its fallback for a lock that has
+          # fallen out of step with pyproject.toml.
+          if ! UV_PROJECT_ENVIRONMENT="$checkout/venv" uv sync --quiet --extra all --locked; then
+            echo "::warning::uv.lock of Hermes $REF is stale; installing as the installer's fallback does"
+            uv pip install --quiet --python venv/bin/python -e ".[all]"
+          fi
           version=$(HERMES_HOME="$RUNNER_TEMP/hermes-version" venv/bin/hermes --version | head -1)
           echo "$version, $REF at $(git rev-parse --short HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Install by the ${{ matrix.route }} route and check what Hermes loaded
