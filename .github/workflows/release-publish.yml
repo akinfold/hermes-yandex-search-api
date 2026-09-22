@@ -13,9 +13,16 @@ jobs:
     name: Build
     uses: ./.github/workflows/release-build.yml
 
+  # Installs the very artifacts built above into a real Hermes, every way the
+  # README documents. Nothing is released or published unless it passes.
+  install-check:
+    name: Install check
+    needs: build
+    uses: ./.github/workflows/install-check.yml
+
   github-release:
     name: GitHub Release
-    needs: build
+    needs: [build, install-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -39,7 +46,7 @@ jobs:
 
   pypi-publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build, install-check]
     # PyPI is opt-in: set repository variable PUBLISH_TO_PYPI=true and configure
     # a PyPI Trusted Publisher for this workflow. Forks without it are skipped.
     if: vars.PUBLISH_TO_PYPI == 'true'

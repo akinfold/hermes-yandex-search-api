@@ -55,6 +55,15 @@ jobs:
       - name: Run unit tests
         run: python -m pytest --cov=hermes_yandex_search --cov-report=term-missing --cov-fail-under=90
 
+  build:
+    name: Build
+    uses: ./.github/workflows/release-build.yml
+
+  install:
+    name: Install check
+    needs: build
+    uses: ./.github/workflows/install-check.yml
+
   coverage-badge:
     name: Coverage badge
     needs: test

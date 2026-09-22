@@ -1,0 +1,49 @@
+# Installs the build into a real Hermes by every route README.md documents, and
+# checks what Hermes then loaded — see tests/install/test_install.py. Called by
+# ci.yml on every pull request, and by release-publish.yml before anything is
+# published. Needs the `release-artifacts` artifact of the calling run.
+#
+# Hermes is set up the way its official installer sets it up (see
+# .github/actions/setup-hermes): once from the latest Hermes release and once
+# from main, which is what the installer and `hermes update` check out by
+# default.
+name: Install check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.route }} on Hermes ${{ matrix.hermes }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hermes: [release, main]
+        route: [git, pypi, copy, dropin, root]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Download the build under test
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts
+          path: dist
+      - run: python -m pip install -e '.[dev]' uv
+      - name: Set up Hermes the way its installer does
+        id: hermes
+        uses: ./.github/actions/setup-hermes
+        with:
+          channel: ${{ matrix.hermes }}
+      - name: Install by the ${{ matrix.route }} route and check what Hermes loaded
+        env:
+          HERMES_CHECKOUT: ${{ steps.hermes.outputs.checkout }}
+          INSTALL_DIST: dist
+          INSTALL_REF: ${{ github.sha }}
+          ROUTE: ${{ matrix.route }}
+        run: UV="$(command -v uv)" python -m pytest -m install -k "$ROUTE" -v -p no:cacheprovider

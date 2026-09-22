@@ -1,0 +1,52 @@
+# Hermes as its official installer sets it up: a git checkout, a Python 3.11
+# virtualenv built with `uv sync --extra all --locked` — or, when that lock has
+# fallen out of step with pyproject.toml, the installer's own fallback — and uv
+# beside it. Shared by the install check and the live e2e workflow, so both run
+# the plugin inside the Hermes that users have.
+name: Set up Hermes
+description: Install Hermes Agent the way its official installer does.
+
+inputs:
+  channel:
+    description: >-
+      `release` for the latest Hermes release, `main` for what the installer
+      and `hermes update` check out by default, or any other branch or tag.
+    default: release
+
+outputs:
+  checkout:
+    description: The Hermes checkout, with its virtualenv in venv/.
+    value: ${{ steps.setup.outputs.checkout }}
+  python:
+    description: The Python of that virtualenv.
+    value: ${{ steps.setup.outputs.python }}
+
+runs:
+  using: composite
+  steps:
+    - id: setup
+      shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        command -v uv >/dev/null || python -m pip install --quiet uv
+        if [ "$CHANNEL" = release ]; then
+          ref=$(gh api repos/NousResearch/hermes-agent/releases/latest --jq .tag_name)
+        else
+          ref=$CHANNEL
+        fi
+        checkout="$RUNNER_TEMP/hermes-agent"
+        git clone --quiet --depth 1 --branch "$ref" \
+          https://github.com/NousResearch/hermes-agent.git "$checkout"
+        cd "$checkout"
+        uv venv --quiet venv --python 3.11
+        if ! UV_PROJECT_ENVIRONMENT="$checkout/venv" uv sync --quiet --extra all --locked; then
+          echo "::warning::uv.lock of Hermes $ref is stale; installing as the installer's fallback does"
+          uv pip install --quiet --python venv/bin/python -e ".[all]"
+        fi
+        version=$(HERMES_HOME="$RUNNER_TEMP/hermes-version" venv/bin/hermes --version | head -1)
+        echo "$version, $ref at $(git rev-parse --short HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+        echo "checkout=$checkout" >> "$GITHUB_OUTPUT"
+        echo "python=$checkout/venv/bin/python" >> "$GITHUB_OUTPUT"
