@@ -23,7 +23,7 @@ have in Yandex Cloud.
 ## Quick start
 
 ```bash
-# 1. Install into Hermes (or from PyPI — see Installing, Option C). It asks for
+# 1. Install into Hermes (other ways: see Installing the plugin). It asks for
 #    your Yandex Cloud API key and folder id (see "Getting a token" below)
 hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable
 
@@ -48,8 +48,8 @@ plugins:
 That's it — `web_search` now goes through Yandex, and the
 `yandex_generative_search` tool is available to the agent. Don't have an API key
 and folder id yet? See
-[Getting a Yandex Search API token](#getting-a-yandex-search-api-token). Prefer a
-drop-in or pip install? See
+[Getting a Yandex Search API token](#getting-a-yandex-search-api-token). Other
+ways to install, and how to upgrade: see
 [Installing the plugin into Hermes](#installing-the-plugin-into-hermes).
 
 ## Why these two search modes
@@ -93,11 +93,12 @@ default).
 
 ## Requirements
 
-- Hermes Agent `>= 0.19` (tested against 0.19.x).
-- Python `>= 3.11, < 3.14`.
+- Hermes Agent `>= 0.19`. Checked before every release against the latest
+  Hermes release and Hermes `main`, each installed by its official installer.
+- Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
-  installs both. Options A and B install neither, and a standard Hermes install
-  already has both — see the note under Option B.
+  installs both. Options A and B install neither, and a Hermes set up by its
+  official installer normally has both — see the note under Option B.
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 
@@ -135,16 +136,13 @@ it at. Name the directory and the install is a plugin: Hermes prompts for
 `yandex`, and `--enable` enables that name. It also scans only that directory, so
 the tests and workflows in this repository stay out of the security report.
 
-Point it at the repository root instead and the install still appears to succeed,
-but it copies a directory with no manifest and no `register(ctx)` in it: Hermes
-warns that it "may not be a valid Hermes plugin", asks for nothing, and enables
-the repository name, which nothing answers to. There is no error to look for:
-what gives it away is `hermes plugins list`, which shows the plugin under its
-real name with `not enabled` beside it, because `--enable` wrote the repository
-name into `plugins.enabled` and nothing matches it. If you are in that state,
-remove `~/.hermes/plugins/hermes-yandex-search-api` and install again with the
-directory named — enabling the real name on top of the broken install leaves a
-stray entry behind.
+Point it at the repository root instead and Hermes copies a directory with no
+manifest and no `register(ctx)` in it: it warns that it "may not be a valid Hermes
+plugin", asks for no credentials, and does not enable the plugin. `hermes plugins
+list` then still shows `yandex` — the package nested in the clone is found — but
+shows it as **not enabled**, which is the symptom to look for. If you installed
+that way, remove `~/.hermes/plugins/hermes-yandex-search-api` and install again
+with the directory named.
 
 ### Option B — drop-in directory
 
@@ -171,37 +169,101 @@ asks for credentials on this path — add them to `~/.hermes/.env` as in the
 [Quick start](#quick-start), and select the backend the same way.
 
 > **Options A and B install no dependencies.** Both copy the plugin's sources
-> only, and the plugin directory declares nothing for Hermes to install. A
-> standard Hermes install already has both packages the plugin needs: `httpx` is
-> a Hermes dependency, and `defusedxml` comes in with one of the extras the
-> installer includes. If yours lacks `defusedxml`, the plugin fails to load with
-> `ModuleNotFoundError: No module named 'defusedxml'`; install it the same way
-> Option C installs the plugin:
+> only, and the plugin directory declares nothing for Hermes to install. A Hermes
+> set up by its official installer normally has both packages the plugin needs:
+> `httpx` is a Hermes dependency, and `defusedxml` comes with
+> `youtube-transcript-api`, from Hermes' `youtube` extra, which is part of its
+> `[all]` set. The install check confirms both before every release, on the
+> latest Hermes release and on `main`. Hermes does not support adding packages
+> to that environment by hand, so there is no command for it here.
 >
-> ```bash
-> ~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python 'defusedxml>=0.7'
-> ```
+> Hermes itself declares `defusedxml` directly only in its `wecom` extra, so an
+> environment built without the `youtube` and `wecom` extras can lack it, and the
+> plugin then fails to load with `ModuleNotFoundError: No module named
+> 'defusedxml'`. If you manage that environment yourself, install the plugin
+> there by Option C instead, which brings both packages. An install in the older
+> layout (see Option C) can lack it too, when its installer could not install
+> the full set and fell back to its "core only (no extras)" tier: the installer
+> then ends by saying it installed via a fallback tier, and what to re-run.
 
 ### Option C — from PyPI
 
-Install the package into the virtualenv Hermes runs from, then enable it. With
-the standard Hermes install that virtualenv is `~/.hermes/hermes-agent/venv`
-(`/usr/local/lib/hermes-agent/venv` if the installer ran as root on Linux), and
-Hermes keeps its own `uv` in `~/.hermes/bin`:
+For a Hermes whose Python environment you manage yourself — your own virtualenv,
+a Nix build: install `hermes-yandex-search-api` into that environment, then enable
+the plugin. Hermes finds it through the `hermes_agent.plugins` entry point, and the
+package brings `httpx` and `defusedxml` with it.
+
+```bash
+hermes plugins enable yandex
+```
+
+**Not for a standard Hermes install.** Since 24 September 2026 the official
+installer runs Hermes from environments its package manager builds and replaces,
+and Hermes does not support adding packages to them by hand: use Option A or B.
+
+A Hermes in the older layout — one that runs from `~/.hermes/hermes-agent/venv`
+and keeps its own `uv` in `~/.hermes/bin`, with no `~/.hermes/installs`, which is
+what Hermes 0.21.5 and anything installed before that date and not updated since
+look like — takes the package like this:
 
 ```bash
 ~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api
 hermes plugins enable yandex
 ```
 
-A bare `pip install hermes-yandex-search-api` does not get there: the installer
-builds that virtualenv with `uv` and without `pip`, so the `pip` on your `PATH`
-belongs to some other Python, and Hermes never sees the plugin. If you installed
-Hermes another way, install the package into whichever environment the `hermes`
-command runs from. Hermes finds it through the `hermes_agent.plugins` entry point.
+Switch such an install to Option A before you run `hermes update`: the update
+moves Hermes onto the new environments, and a package installed this way does not
+come along. A bare `pip install hermes-yandex-search-api` never reached Hermes at
+all — the `pip` on your `PATH` belongs to some other Python.
 
-All three options are checked before every release by installing the build into
-a real Hermes — the latest release and `main` — exactly as written here; see
+Nothing asks for credentials on this path — add them to `~/.hermes/.env` as in
+the [Quick start](#quick-start), and select the backend the same way.
+
+### Upgrading
+
+Upgrade the way you installed. Option A — Hermes 0.21.5 and later install the
+new version from the source they recorded:
+
+```bash
+hermes plugins update yandex
+```
+
+Older Hermes cannot update an install from a plugin directory, and no Hermes
+updates one pinned with `--ref`: run the install command again with `--force`,
+which replaces the installed copy and keeps your credentials and backend
+selection.
+
+```bash
+hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable --force
+```
+
+Both scan the new version again, but unlike a first install neither stops to ask
+when Hermes' security scan reports a caution.
+
+Option B from a clone — pull it, then copy the directory's contents over the
+installed copy. Running the `cp -r` above again would put the new copy inside the
+old one instead:
+
+```bash
+cp -r hermes_yandex_search/. ~/.hermes/plugins/web/yandex/
+```
+
+Option B from a release — unzip the new release's archive over the old one:
+
+```bash
+unzip -o hermes-yandex-search-plugin-<version>.zip -d ~/.hermes/plugins/web/
+```
+
+Option C — upgrade the package in the same environment: in the older layout,
+
+```bash
+~/.hermes/bin/uv pip install --upgrade --python ~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api
+```
+
+Options A and B, and their upgrades, are checked before every release by
+installing the build into a real Hermes — the latest release and `main`, each set
+up by its official installer — exactly as written here; the Option C install is
+checked on the latest release while it still has the older layout. See
 [Checking the install paths](#checking-the-install-paths).
 
 ## Configuring the token in Hermes
@@ -352,16 +414,21 @@ pytest -m e2e -v
 
 The Hermes-host test (`tests/e2e/test_live_hermes.py`) skips automatically unless
 Hermes is importable. The `hermes-agent` on PyPI is far behind the Hermes users
-run, so use the Python of a real Hermes install instead. With the standard one:
+run, so run the suite in the Python of a real Hermes install instead, as the
+workflow below does: `tests/install/hermes_env.py` finds that Python in either
+layout the installer makes, this checkout goes on its path, and pytest goes on
+it after Hermes' own packages, so Hermes keeps its own versions. Nothing is
+installed into Hermes' environment, which Hermes builds itself. From the root of
+this checkout, with the development virtualenv active:
 
 ```bash
-~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python -e . pytest
-~/.hermes/hermes-agent/venv/bin/python -m pytest -m e2e -v
+site=$(mktemp -d)
+python -m pip install --quiet --target "$site" pytest
+PYTHONPATH="$PWD" "$(python tests/install/hermes_env.py)" -c 'import sys; sys.path.append(sys.argv.pop(1)); import pytest; raise SystemExit(pytest.main(sys.argv[1:]))' "$site" tests/e2e -m e2e -v
 ```
 
-That installs this checkout into your Hermes as a PyPI-style plugin; remove it
-afterwards with `~/.hermes/bin/uv pip uninstall --python
-~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api`.
+For a Hermes you run from a checkout of your own rather than the installer's, put
+the Python that checkout runs on in place of `$(python tests/install/hermes_env.py)`.
 
 ### On GitHub Actions
 
@@ -369,10 +436,11 @@ The **E2E (live)** workflow (`.github/workflows/e2e.yml`) is manual
 (*Actions → E2E (live) → Run workflow*). It reads credentials from a GitHub
 [Environment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
 so they are never committed to the repo. It runs the plugin inside a real Hermes,
-set up the way the Hermes installer sets it up: the latest Hermes release by
-default, and its `hermes` input switches to Hermes `main` or to no Hermes at all.
-With Hermes, the run fails outright if the plugin cannot import it, rather than
-skipping the Hermes-host test.
+installed by its official installer: the latest Hermes release by default, and its
+`hermes` input switches to Hermes `main` or to no Hermes at all. With Hermes, the
+tests run in Hermes' own Python, with this checkout on its path rather than
+installed into Hermes' environment, and the run fails outright if the plugin
+cannot import Hermes, rather than skipping the Hermes-host test.
 
 If you fork this repository and want to run the live E2E workflow, set up the
 Environment once:
@@ -392,19 +460,20 @@ Environment once:
 ## Checking the install paths
 
 The `install`-marked tests in `tests/install/` install the built plugin into a
-real Hermes, set up the way the official installer sets it up, by each option in
+real Hermes, set up by its official installer, by each option in
 [Installing the plugin into Hermes](#installing-the-plugin-into-hermes) — both
-forms of Option B included, running the README's own commands — and then ask
-Hermes what it loaded: the plugin must be listed as enabled, load without error,
-give the agent `yandex_generative_search`, and, with the backend selected, be the
-provider `web_search` calls. They also check that installing from the repository
-root still looks the way this README describes. A fast unit test keeps the
-commands in the tests and in this README identical.
+forms of Option B and the upgrades included, running the README's own commands —
+and then ask Hermes what it loaded: the plugin must be listed as enabled, load
+without error, give the agent `yandex_generative_search`, and, with the backend
+selected, be the provider `web_search` calls. They also check that installing
+from the repository root still looks the way this README describes. A fast unit
+test keeps the commands in the tests and in this README identical.
 
 The **Install check** workflow runs them against the latest Hermes release and
 against Hermes `main` on every pull request, and on every release tag before
 anything is published: the GitHub Release and the PyPI upload both wait for it.
-To run them locally, see the docstring of `tests/install/test_install.py`.
+They install into a real `~/.hermes`, so run them yourself only in a container or
+VM — see the docstring of `tests/install/test_install.py`.
 
 ## Related Hermes plugins
 

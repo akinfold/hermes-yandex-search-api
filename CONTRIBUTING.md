@@ -66,23 +66,25 @@ env vars or local files, then run `pytest -m e2e` — see the README section
 
 ### The install check
 
-`tests/install/`, marked `install`, installs the built wheel, the drop-in archive,
-a copy of the plugin directory, and the Git tree into a real Hermes, set up the
-way the Hermes installer sets it up, using the commands the README gives, and asks
-Hermes what it loaded. Change an install instruction in the README and you change
-the test: `test_readme_gives_the_commands_under_test`, which runs with the unit
-tests, fails until the two agree. The **Install check** workflow runs it on every
-pull request against the latest Hermes release and against Hermes `main`, and the
-release workflow runs it on the artifacts it has just built: the GitHub Release
-and the PyPI upload wait for it. The docstring of `tests/install/test_install.py`
-says how to run it locally.
+`tests/install/`, marked `install`, installs the Git tree, the drop-in archive, a
+copy of the plugin directory, and (on a Hermes in the older layout) the built
+wheel into a real Hermes set up by its official installer, using the commands the
+README gives, and asks Hermes what it loaded. Change an install
+instruction in the README and you change the test:
+`test_readme_gives_the_commands_under_test`, which runs with the unit tests, fails
+until the two agree. The **Install check** workflow runs it on every pull request
+against the latest Hermes release and against Hermes `main`, and the release
+workflow runs it on the artifacts it has just built: the GitHub Release and the
+PyPI upload wait for it. It installs into the real `~/.hermes`, so run it yourself
+only in a container or VM; the docstring of `tests/install/test_install.py` says
+how.
 
 ## Commit & PR conventions
 
 - Write focused commits with imperative subject lines
   (e.g. `client: handle empty passages`).
 - Open a PR against `main`. Fill in the PR template and link any related issue.
-- CI (lint + tests on Python 3.11–3.13) must pass. Live e2e is manual and not
+- CI (lint + tests on Python 3.11–3.14) must pass. Live e2e is manual and not
   required for a PR.
 - For user-facing changes, update the README and add a note to the PR
   description.

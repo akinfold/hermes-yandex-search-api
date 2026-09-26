@@ -4,10 +4,13 @@ name: E2E (live)
 # Credentials come from the GitHub Environment named below — see README
 # ("Running the live E2E tests").
 #
-# The plugin runs inside a real Hermes, set up the way its installer sets it up
-# (see .github/actions/setup-hermes): the latest release by default, or main,
-# which is what the installer checks out. `none` runs it on its own, on the
-# stand-ins in _compat.py.
+# The plugin runs inside a real Hermes, installed by its official installer (see
+# .github/actions/setup-hermes): the latest release by default, or main, which
+# is what the installer gives today. The tests run in Hermes' own Python, with
+# this checkout on PYTHONPATH and pytest after Hermes' own packages: nothing is
+# installed into Hermes' environment, which Hermes builds itself and does not
+# support changing by hand.
+# `none` runs the plugin on its own, on the stand-ins in _compat.py.
 on:
   workflow_dispatch:
     inputs:
@@ -34,27 +37,32 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # 3.11: the Python the older installer settles on when it finds no newer one.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
-      - name: Set up Hermes the way its installer does
+      - name: Install Hermes with its official installer
         id: hermes
         if: inputs.hermes != 'none'
         uses: ./.github/actions/setup-hermes
         with:
           channel: ${{ inputs.hermes }}
 
-      - name: Install the plugin into Hermes' virtualenv
+      - name: Give Hermes' Python the plugin and pytest, without installing into Hermes
         if: inputs.hermes != 'none'
         env:
           HERMES_PYTHON: ${{ steps.hermes.outputs.python }}
         run: |
           set -euo pipefail
-          uv pip install --quiet --python "$HERMES_PYTHON" -e . pytest
+          # pytest goes to a directory of its own, which the run below appends to
+          # sys.path after Hermes' packages, so Hermes keeps its own versions.
+          python -m pip install --quiet --target "$RUNNER_TEMP/e2e-site" pytest
           # Hermes' own code, or a failed run: never a quiet fallback to the stand-ins.
-          "$HERMES_PYTHON" -c "from hermes_yandex_search._compat import HERMES_AVAILABLE; assert HERMES_AVAILABLE, 'the plugin cannot import Hermes'"
+          PYTHONPATH="$GITHUB_WORKSPACE" "$HERMES_PYTHON" -c "from hermes_yandex_search._compat import HERMES_AVAILABLE; assert HERMES_AVAILABLE, 'the plugin cannot import Hermes'"
+          echo "PYTHONPATH=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           echo "E2E_PYTHON=$HERMES_PYTHON" >> "$GITHUB_ENV"
+          echo "E2E_SITE=$RUNNER_TEMP/e2e-site" >> "$GITHUB_ENV"
 
       - name: Install the plugin on its own
         if: inputs.hermes == 'none'
@@ -68,4 +76,7 @@ jobs:
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
           # Workflow input wins; otherwise fall back to an Environment variable.
           YANDEX_SEARCH_TYPE: ${{ inputs.search_type || vars.YANDEX_SEARCH_TYPE }}
-        run: '"$E2E_PYTHON" -m pytest -m e2e -v'
+        run: >-
+          "$E2E_PYTHON" -c 'import sys; sys.path.append(sys.argv.pop(1)); import pytest;
+          raise SystemExit(pytest.main(sys.argv[1:]))'
+          "${E2E_SITE:-}" tests/e2e -m e2e -v -p no:cacheprovider

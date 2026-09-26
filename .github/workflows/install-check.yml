@@ -3,10 +3,10 @@
 # ci.yml on every pull request, and by release-publish.yml before anything is
 # published. Needs the `release-artifacts` artifact of the calling run.
 #
-# Hermes is set up the way its official installer sets it up (see
+# Hermes is installed by its official installer (see
 # .github/actions/setup-hermes): once from the latest Hermes release and once
-# from main, which is what the installer and `hermes update` check out by
-# default.
+# from main, which is what the installer and `hermes update` give today. One
+# job per Hermes runs every route in turn; each test puts back what it changed.
 name: Install check
 
 on:
@@ -17,33 +17,32 @@ permissions:
 
 jobs:
   install:
-    name: ${{ matrix.route }} on Hermes ${{ matrix.hermes }}
+    name: Hermes ${{ matrix.hermes }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         hermes: [release, main]
-        route: [git, pypi, copy, dropin, root]
     steps:
       - uses: actions/checkout@v7
+      # 3.11: the Python the older installer settles on when it finds no newer one.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Download the build under test
         uses: actions/download-artifact@v8
         with:
           name: release-artifacts
           path: dist
-      - run: python -m pip install -e '.[dev]' uv
-      - name: Set up Hermes the way its installer does
-        id: hermes
+      - run: python -m pip install -e '.[dev]'
+      - name: Install Hermes with its official installer
         uses: ./.github/actions/setup-hermes
         with:
           channel: ${{ matrix.hermes }}
-      - name: Install by the ${{ matrix.route }} route and check what Hermes loaded
+      - name: Install by every route and check what Hermes loaded
         env:
-          HERMES_CHECKOUT: ${{ steps.hermes.outputs.checkout }}
+          INSTALL_CHECK_CHANNEL: ${{ matrix.hermes }}
+          INSTALL_CHECK_DISPOSABLE_HOME: "1"
           INSTALL_DIST: dist
           INSTALL_REF: ${{ github.sha }}
-          ROUTE: ${{ matrix.route }}
-        run: UV="$(command -v uv)" python -m pytest -m install -k "$ROUTE" -v -p no:cacheprovider
+        run: python -m pytest -m install -v -rs -p no:cacheprovider
