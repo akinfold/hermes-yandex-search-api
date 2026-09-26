@@ -67,9 +67,9 @@ env vars or local files, then run `pytest -m e2e` — see the README section
 ### The install check
 
 `tests/install/`, marked `install`, installs the Git tree, the drop-in archive, a
-copy of the plugin directory, and (on a Hermes from the 0.21-era installer) the
-built wheel into a real Hermes set up by its official installer, using the
-commands the README gives, and asks Hermes what it loaded. Change an install
+copy of the plugin directory, and (on a Hermes in the older layout) the built
+wheel into a real Hermes set up by its official installer, using the commands the
+README gives, and asks Hermes what it loaded. Change an install
 instruction in the README and you change the test:
 `test_readme_gives_the_commands_under_test`, which runs with the unit tests, fails
 until the two agree. The **Install check** workflow runs it on every pull request

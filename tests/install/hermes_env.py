@@ -1,11 +1,15 @@
-"""Find the Python a Hermes install runs on, whichever installer made it.
+"""Find the Python a Hermes install runs on, for the two layouts its installer makes.
 
-* Hermes 0.21.5 and earlier, installed by their own installer, run from the
-  virtualenv inside the checkout: ``~/.hermes/hermes-agent/venv``.
-* Hermes installed by the current installer (Hermes ``main`` since 2026-09-24)
-  runs from an environment its package manager, pm, builds and replaces. pm
-  records the one in use in ``~/.hermes/installs/<key>/facts.json``, where the
-  key is derived from the checkout's path (``pm/environments.py``).
+* The older layout — Hermes 0.21.5, and anything installed before 2026-09-24 and
+  not updated since — runs from the virtualenv inside the checkout:
+  ``~/.hermes/hermes-agent/venv``.
+* The installer on Hermes ``main`` since 2026-09-24 runs Hermes from an
+  environment its package manager, pm, builds and replaces. pm records the one
+  in use in ``~/.hermes/installs/<key>/facts.json``, where the key is derived
+  from the checkout's path (``pm/environments.py``).
+
+Only the default places are covered: a Hermes installed as root, under another
+``HERMES_HOME`` root, or on Windows is not.
 
 Used by ``test_install.py`` to run ``probe.py`` in Hermes' own interpreter, and
 by the ``setup-hermes`` action to hand that interpreter to the live e2e run::
@@ -38,7 +42,10 @@ def hermes_python(hermes_home: Path) -> Path:
     facts = facts_file(hermes_home)
     if facts.is_file():
         record = json.loads(facts.read_text(encoding="utf-8-sig"))
-        return Path(record["packages"]["venv"]["environment"]) / "bin" / "python"
+        environment = record.get("packages", {}).get("venv", {}).get("environment")
+        # Before its first sync pm runs the checkout's own environment, as below.
+        if environment:
+            return Path(environment) / "bin" / "python"
     return hermes_home / "hermes-agent" / "venv" / "bin" / "python"
 
 

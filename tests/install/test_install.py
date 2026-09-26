@@ -5,8 +5,7 @@ installer set up in this account — the ``setup-hermes`` action does that in CI
 and run the commands README.md gives, as written. Success is whatever Hermes
 reports afterwards: ``hermes plugins list``, and the plugins, tools and
 ``web_search`` provider its own plugin manager hands the agent (see
-``probe.py``, run in Hermes' own Python, which ``hermes_env.py`` finds for
-either installer).
+``probe.py``, run in Hermes' own Python, which ``hermes_env.py`` finds).
 
 Where the tests depart from the README text, and why:
 
@@ -17,10 +16,15 @@ Where the tests depart from the README text, and why:
 * the drop-in archive is the one about to be attached to the release, and its
   ``<version>`` placeholder is filled in;
 * the directory copy runs in a fresh copy of the plugin directory, standing in
-  for a clone of this repository.
+  for a clone of this repository;
+* before an upgrade, the installed copy's manifest is set to version 0.0.0, so
+  the version check afterwards proves the upgrade really replaced the files.
 
-The PyPI route runs only on a Hermes from the 0.21-era installer, which is the
-only one README.md gives a PyPI command for; on a pm-built Hermes it is skipped.
+The PyPI route applies only to a Hermes in the older layout (its virtualenv in
+``~/.hermes/hermes-agent/venv``), the only one README.md gives a PyPI command
+for. On Hermes ``main``, which pm builds, it is skipped. On the latest release it
+must run: once a release ships the pm layout, the test fails there rather than
+skipping, because README.md then needs changing.
 
 Each test changes the Hermes it runs against, then puts back what it changed:
 the plugin directories, ``config.yaml`` (the enabled plugins and the selected
@@ -68,7 +72,7 @@ REQUIRED_ENV = ("YANDEX_API_KEY", "YANDEX_FOLDER_ID")
 DEFAULT_TOOLS = {"yandex_generative_search"}
 
 #: What the plugin imports beyond the standard library. Options A and B install
-#: none of it; README.md says a Hermes set up by its installer already has both.
+#: none of it; README.md says a Hermes set up by its installer normally has both.
 DEPENDENCIES = ("httpx", "defusedxml")
 
 # The commands README.md gives. test_readme_gives_the_commands_under_test keeps
@@ -78,7 +82,7 @@ GIT_INSTALL = (
     "hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable"
 )
 GIT_UPGRADE = GIT_INSTALL + " --force"
-#: For a Hermes from the 0.21-era installer only; see README.md, Option C.
+#: For a Hermes in the older layout only; see README.md, Option C.
 PYPI_INSTALL = (
     "~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python"
     " hermes-yandex-search-api"
@@ -100,12 +104,16 @@ ADD_CREDENTIALS = (
 )
 SELECT_BACKEND = "hermes config set web.search_backend yandex"
 
-#: A backend Hermes can pick on its own when nothing is selected — Brave's free
-#: tier, available as soon as its key is set. What Hermes picks without it
-#: varies with the Hermes and what it finds configured (keenable, exa and
-#: firecrawl have all been seen), and on a Hermes with no other backend it is
-#: the plugin itself; with a rival in place, the selection step cannot be a
-#: no-op without the test noticing.
+#: A rival for the plugin, so the README's selection step has something to
+#: decide. With nothing selected, Hermes takes the only available backend if
+#: there is just one, and otherwise the first available one in its own
+#: preference order; keyless free tiers (keenable, exa, firecrawl and others)
+#: come in only when neither picks anything. With its credentials set, the
+#: plugin can be the only available backend, and selecting it would then change
+#: nothing the test could see. Brave's free tier is available as soon as its key is set, and
+#: the preference order lists it but not the plugin, so with the rival in place
+#: Hermes picks something else until the backend is selected (see
+#: ``agent/web_search_registry.py`` in Hermes).
 RIVAL_BACKEND = "BRAVE_SEARCH_API_KEY=install-check-not-a-key"
 
 #: Not a README command: the mistake README.md warns about, pointing Hermes at
@@ -154,13 +162,15 @@ class Home:
         """Where Option B puts the plugin: ``~/.hermes/plugins/web/yandex``."""
         return self.hermes_home / "plugins" / "web" / PLUGIN
 
-    def run(self, command: str, *, answers: str = "", check: bool = True) -> str:
+    def run(
+        self, command: str, *, answers: str = "", check: bool = True, cwd: Path | None = None
+    ) -> str:
         """Run a shell command as the user would; fail on a non-zero exit if *check*."""
         result = subprocess.run(
             ["bash", "-c", command],
             input=answers,
             env=self.env,
-            cwd=self.path,
+            cwd=cwd or self.path,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -216,7 +226,8 @@ class _Snapshot:
         }
 
     def restore(self) -> None:
-        shutil.rmtree(self.plugins, ignore_errors=True)
+        if self.plugins.is_dir():
+            shutil.rmtree(self.plugins)
         if self.saved_plugins.is_dir():
             shutil.copytree(self.saved_plugins, self.plugins, symlinks=True)
         for name, content in self.files.items():
@@ -253,6 +264,18 @@ def home(tmp_path: Path):
 
 def _flat(text: str) -> str:
     return " ".join(text.split())
+
+
+def _make_stale(home: Home) -> None:
+    """Mark the installed copy as version 0.0.0, so only a real upgrade passes the version check."""
+    # The Git install lands in ~/.hermes/plugins/yandex, Option B in plugins/web/yandex.
+    places = (home.hermes_home / "plugins" / PLUGIN, home.dropin_dir)
+    manifests = [place / "plugin.yaml" for place in places if (place / "plugin.yaml").is_file()]
+    assert len(manifests) == 1, f"expected one installed manifest in {places}, found {manifests}"
+    text = manifests[0].read_text(encoding="utf-8")
+    stale = re.sub(r"(?m)^version:.*$", "version: 0.0.0", text, count=1)
+    assert stale != text, "the installed manifest has no version line"
+    manifests[0].write_text(stale, encoding="utf-8")
 
 
 def _assert_loaded(home: Home, *, source: str) -> None:
@@ -323,6 +346,7 @@ def test_git_install_asks_for_credentials_loads_and_upgrades(home: Home) -> None
 
     # README.md's upgrade: the same command with --force. The credentials are
     # already there, so nothing is asked again, and the backend stays selected.
+    _make_stale(home)
     out = _flat(home.run(GIT_UPGRADE + ref))
     for name in REQUIRED_ENV:
         assert f"{name}:" not in out, out
@@ -333,9 +357,14 @@ def test_git_install_asks_for_credentials_loads_and_upgrades(home: Home) -> None
 @install
 def test_pypi_install_loads(home: Home) -> None:
     if is_pm_install(home.hermes_home):
+        if os.environ.get("INSTALL_CHECK_CHANNEL") == "release":
+            pytest.fail(
+                "the latest Hermes release runs from pm-built environments: README.md's "
+                "Option C command no longer applies to it, so change README.md and this test"
+            )
         pytest.skip(
             "this Hermes runs from environments its package manager builds; README.md gives "
-            "the PyPI command only for a Hermes from the 0.21-era installer"
+            "the PyPI command only for a Hermes in the older layout"
         )
     wheel = _one("*.whl")
     try:
@@ -353,43 +382,45 @@ def test_pypi_install_loads(home: Home) -> None:
 
 
 @install
-def test_copy_from_a_clone_loads_and_upgrades(home: Home) -> None:
+def test_copy_from_a_clone_loads_and_upgrades(home: Home, tmp_path: Path) -> None:
     _assert_hermes_has_the_dependencies(home)
-    clone = home.path / PACKAGE
-    shutil.copytree(REPO_ROOT / PACKAGE, clone, ignore=shutil.ignore_patterns("__pycache__"))
-    try:
-        home.run(COPY_INSTALL)
-        home.run(ADD_CREDENTIALS)
-        _select_backend(home)
-        _assert_loaded(home, source="user")
+    clone = tmp_path / "clone"
+    shutil.copytree(
+        REPO_ROOT / PACKAGE, clone / PACKAGE, ignore=shutil.ignore_patterns("__pycache__")
+    )
 
-        # README.md's upgrade: the directory's contents over the installed copy.
-        home.run(COPY_UPGRADE)
-        assert not (home.dropin_dir / PACKAGE).exists(), "the upgrade nested a second copy"
-        _assert_loaded(home, source="user")
-    finally:
-        shutil.rmtree(clone, ignore_errors=True)
+    home.run(COPY_INSTALL, cwd=clone)
+    home.run(ADD_CREDENTIALS)
+    _select_backend(home)
+    _assert_loaded(home, source="user")
+
+    # README.md's upgrade: the directory's contents over the installed copy.
+    _make_stale(home)
+    home.run(COPY_UPGRADE, cwd=clone)
+    assert not (home.dropin_dir / PACKAGE).exists(), "the upgrade nested a second copy"
+    _assert_loaded(home, source="user")
 
 
 @install
-def test_dropin_archive_loads_and_upgrades(home: Home) -> None:
+def test_dropin_archive_loads_and_upgrades(home: Home, tmp_path: Path) -> None:
     _assert_hermes_has_the_dependencies(home)
     archive = _one("hermes-yandex-search-plugin-*.zip")
     assert archive.name == f"hermes-yandex-search-plugin-{VERSION}.zip", archive.name
-    shutil.copy(archive, home.path / archive.name)
-    try:
-        home.run(DROPIN_INSTALL.replace("<version>", VERSION))
-        assert (home.dropin_dir / "plugin.yaml").is_file()
-        home.run(ENABLE)
-        home.run(ADD_CREDENTIALS)
-        _select_backend(home)
-        _assert_loaded(home, source="user")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    shutil.copy(archive, downloads / archive.name)
 
-        # README.md's upgrade: unzip the new archive over the old one.
-        home.run(DROPIN_UPGRADE.replace("<version>", VERSION))
-        _assert_loaded(home, source="user")
-    finally:
-        (home.path / archive.name).unlink(missing_ok=True)
+    home.run(DROPIN_INSTALL.replace("<version>", VERSION), cwd=downloads)
+    assert (home.dropin_dir / "plugin.yaml").is_file()
+    home.run(ENABLE)
+    home.run(ADD_CREDENTIALS)
+    _select_backend(home)
+    _assert_loaded(home, source="user")
+
+    # README.md's upgrade: unzip the new archive over the old one.
+    _make_stale(home)
+    home.run(DROPIN_UPGRADE.replace("<version>", VERSION), cwd=downloads)
+    _assert_loaded(home, source="user")
 
 
 @install

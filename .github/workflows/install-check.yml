@@ -25,9 +25,10 @@ jobs:
         hermes: [release, main]
     steps:
       - uses: actions/checkout@v7
+      # 3.11: the Python the older installer settles on when it finds no newer one.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Download the build under test
         uses: actions/download-artifact@v8
         with:
@@ -40,6 +41,7 @@ jobs:
           channel: ${{ matrix.hermes }}
       - name: Install by every route and check what Hermes loaded
         env:
+          INSTALL_CHECK_CHANNEL: ${{ matrix.hermes }}
           INSTALL_CHECK_DISPOSABLE_HOME: "1"
           INSTALL_DIST: dist
           INSTALL_REF: ${{ github.sha }}
