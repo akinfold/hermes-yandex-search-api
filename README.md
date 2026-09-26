@@ -221,15 +221,24 @@ the [Quick start](#quick-start), and select the backend the same way.
 
 ### Upgrading
 
-Upgrade the way you installed. Option A — the same command with `--force`, which
-replaces the installed copy and keeps your credentials and backend selection:
+Upgrade the way you installed. Option A — Hermes 0.21.5 and later install the
+new version from the source they recorded:
+
+```bash
+hermes plugins update yandex
+```
+
+Older Hermes cannot update an install from a plugin directory, and no Hermes
+updates one pinned with `--ref`: run the install command again with `--force`,
+which replaces the installed copy and keeps your credentials and backend
+selection.
 
 ```bash
 hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable --force
 ```
 
-(Unlike a first install, `--force` does not stop to ask when Hermes' security
-scan reports a caution.)
+Both scan the new version again, but unlike a first install neither stops to ask
+when Hermes' security scan reports a caution.
 
 Option B from a clone — pull it, then copy the directory's contents over the
 installed copy. Running the `cp -r` above again would put the new copy inside the

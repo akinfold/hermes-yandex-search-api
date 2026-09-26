@@ -81,6 +81,7 @@ DEPENDENCIES = ("httpx", "defusedxml")
 GIT_INSTALL = (
     "hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable"
 )
+GIT_UPDATE = "hermes plugins update yandex"
 GIT_UPGRADE = GIT_INSTALL + " --force"
 #: For a Hermes in the older layout only; see README.md, Option C.
 PYPI_INSTALL = (
@@ -278,7 +279,7 @@ def _make_stale(home: Home) -> None:
     manifests[0].write_text(stale, encoding="utf-8")
 
 
-def _assert_loaded(home: Home, *, source: str) -> None:
+def _assert_loaded(home: Home, *, source: str, version: str | None = VERSION) -> None:
     """Hermes lists the plugin as enabled, loads it, and gives the agent its tools."""
     assert [row["status"] for row in home.listed()] == ["enabled"], home.listed()
 
@@ -289,7 +290,9 @@ def _assert_loaded(home: Home, *, source: str) -> None:
     assert plugin["error"] is None, plugin["error"]
     assert plugin["enabled"], plugin
     assert plugin["source"] == source, plugin
-    assert plugin["version"] == VERSION, plugin
+    if version is None:
+        return
+    assert plugin["version"] == version, plugin
     assert plugin["tools"] == len(DEFAULT_TOOLS), plugin
 
     mine = {name: toolset for name, toolset in report["tools"].items() if toolset == TOOLSET}
@@ -316,6 +319,7 @@ def test_readme_gives_the_commands_under_test() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     commands = (
         GIT_INSTALL,
+        GIT_UPDATE,
         GIT_UPGRADE,
         PYPI_INSTALL,
         COPY_INSTALL,
@@ -352,6 +356,23 @@ def test_git_install_asks_for_credentials_loads_and_upgrades(home: Home) -> None
         assert f"{name}:" not in out, out
     assert home.credentials() == PROMPT_ANSWERS
     _assert_loaded(home, source="user")
+
+
+@install
+def test_git_install_updates_with_hermes_plugins_update(home: Home) -> None:
+    """README.md's usual upgrade for Option A: Hermes' own ``plugins update``.
+
+    It installs from the default branch, not the commit under test, so this
+    checks that the command upgrades this plugin's kind of install, not what it
+    installs: after it, the manifest marked 0.0.0 must be gone.
+    """
+    answers = "".join(PROMPT_ANSWERS[name] + "\n" for name in REQUIRED_ENV)
+    home.run(GIT_INSTALL, answers=answers)
+    _make_stale(home)
+    home.run(GIT_UPDATE)
+    [plugin] = [plugin for plugin in home.probe()["plugins"] if plugin["name"] == PLUGIN]
+    assert plugin["version"] != "0.0.0", f"`{GIT_UPDATE}` replaced nothing: {plugin}"
+    _assert_loaded(home, source="user", version=None)
 
 
 @install
