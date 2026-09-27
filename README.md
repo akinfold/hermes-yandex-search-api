@@ -213,9 +213,13 @@ hermes plugins enable yandex
 ```
 
 Switch such an install to Option A before you run `hermes update`: the update
-moves Hermes onto the new environments, and a package installed this way does not
-come along. A bare `pip install hermes-yandex-search-api` never reached Hermes at
-all — the `pip` on your `PATH` belongs to some other Python.
+moves Hermes onto the new environments, and a package installed this way does
+not come along. The loss is silent: `yandex` stays enabled in the configuration,
+but the search backend and its tool are gone, and neither the update nor
+`hermes doctor` mentions it. If you have already updated, run the Option A
+install now: it brings them back and keeps your credentials in `~/.hermes/.env`.
+A bare `pip install hermes-yandex-search-api` never reached Hermes at all — the
+`pip` on your `PATH` belongs to some other Python.
 
 Nothing asks for credentials on this path — add them to `~/.hermes/.env` as in
 the [Quick start](#quick-start), and select the backend the same way.
