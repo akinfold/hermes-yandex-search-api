@@ -93,8 +93,9 @@ default).
 
 ## Requirements
 
-- Hermes Agent `>= 0.19`. Checked before every release against the latest
-  Hermes release and Hermes `main`, each installed by its official installer.
+- Hermes Agent `>= 0.18.1`; earlier releases do not register the `yandex`
+  web-search backend. Checked before every release against the latest Hermes
+  release and Hermes `main`, each installed by its official installer.
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
   installs both. Options A and B install neither, and a Hermes set up by its
