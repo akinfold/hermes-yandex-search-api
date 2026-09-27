@@ -29,14 +29,14 @@ body:
     id: plugin-version
     attributes:
       label: Plugin version
-      placeholder: "0.1.1"
+      placeholder: "Shown by hermes plugins list"
     validations:
       required: true
   - type: input
     id: hermes-version
     attributes:
       label: Hermes Agent version
-      placeholder: "0.21.5"
+      placeholder: "Output of hermes --version"
     validations:
       required: true
   - type: input

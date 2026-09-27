@@ -93,8 +93,9 @@ default).
 
 ## Requirements
 
-- Hermes Agent `>= 0.19`. Checked before every release against the latest
-  Hermes release and Hermes `main`, each installed by its official installer.
+- Hermes Agent `>= 0.18.1`; earlier releases do not register the `yandex`
+  web-search backend. Checked before every release against the latest Hermes
+  release and Hermes `main`, each installed by its official installer.
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
   installs both. Options A and B install neither, and a Hermes set up by its
@@ -212,9 +213,13 @@ hermes plugins enable yandex
 ```
 
 Switch such an install to Option A before you run `hermes update`: the update
-moves Hermes onto the new environments, and a package installed this way does not
-come along. A bare `pip install hermes-yandex-search-api` never reached Hermes at
-all — the `pip` on your `PATH` belongs to some other Python.
+moves Hermes onto the new environments, and a package installed this way does
+not come along. The loss is silent: `yandex` stays enabled in the configuration,
+but the search backend and its tool are gone, and neither the update nor
+`hermes doctor` mentions it. If you have already updated, run the Option A
+install now: it brings them back and keeps your credentials in `~/.hermes/.env`.
+A bare `pip install hermes-yandex-search-api` never reached Hermes at all — the
+`pip` on your `PATH` belongs to some other Python.
 
 Nothing asks for credentials on this path — add them to `~/.hermes/.env` as in
 the [Quick start](#quick-start), and select the backend the same way.
