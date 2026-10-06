@@ -320,7 +320,7 @@ hermes config set web.search_backend yandex
 ```
 
 That writes `web.search_backend` into `~/.hermes/config.yaml`, which, with the
-plugin enabled, then reads:
+plugin enabled by Option A or C, then reads:
 
 ```yaml
 web:
@@ -330,10 +330,22 @@ plugins:
     - yandex
 ```
 
+After Option B the entry reads `web/yandex` instead. Hermes names a plugin in a
+category folder by its path under `~/.hermes/plugins`: `hermes plugins enable
+yandex` finds the plugin by its name, enables it as `web/yandex`, and says
+`Plugin web/yandex enabled`. Writing the file yourself after Option B, list it
+that way:
+
+```yaml
+plugins:
+  enabled:
+    - web/yandex
+```
+
 The `yandex` backend is search-only: the Yandex Search API returns result
 snippets, not page content, so the plugin does not serve `web_extract`. Page
 extraction keeps using whichever extract-capable backend Hermes resolves, which
-is why the snippet above sets `web.search_backend` rather than `web.backend`.
+is why the selection above sets `web.search_backend` rather than `web.backend`.
 
 The `yandex_generative_search` tool becomes available as soon as the plugin is
 enabled — no extra configuration needed. It is registered in the `yandex_search`

@@ -114,6 +114,9 @@ ADD_CREDENTIALS = (
     " >> ~/.hermes/.env"
 )
 SELECT_BACKEND = "hermes config set web.search_backend yandex"
+#: What ENABLE puts in ``plugins.enabled`` after Option B: the plugin's path under
+#: ``~/.hermes/plugins``, not its name; README.md shows both.
+DROPIN_KEY = f"web/{PLUGIN}"
 
 #: A rival for the plugin, so the README's selection step has something to
 #: decide. With nothing selected, Hermes takes the only available backend if
@@ -359,6 +362,7 @@ def test_readme_gives_the_commands_under_test() -> None:
             f"README.md no longer says, on lines of its own:\n{command}"
         )
     assert f"~/.hermes/plugins/web/{PLUGIN}/plugin.yaml" in readme
+    assert f"`Plugin {DROPIN_KEY} enabled`" in readme
 
 
 @install
@@ -491,7 +495,8 @@ def test_copy_from_a_clone_loads_and_upgrades(home: Home, tmp_path: Path) -> Non
         REPO_ROOT / PACKAGE, clone / PACKAGE, ignore=shutil.ignore_patterns("__pycache__")
     )
 
-    home.run(COPY_INSTALL, cwd=clone)
+    out = _flat(home.run(COPY_INSTALL, cwd=clone))
+    assert f"Plugin {DROPIN_KEY} enabled" in out, out
     home.run(ADD_CREDENTIALS)
     _select_backend(home)
     _assert_loaded(home, source="user")
@@ -514,7 +519,8 @@ def test_dropin_archive_loads_and_upgrades(home: Home, tmp_path: Path) -> None:
 
     home.run(DROPIN_INSTALL.replace("<version>", VERSION), cwd=downloads)
     assert (home.dropin_dir / "plugin.yaml").is_file()
-    home.run(ENABLE)
+    out = _flat(home.run(ENABLE))
+    assert f"Plugin {DROPIN_KEY} enabled" in out, out
     home.run(ADD_CREDENTIALS)
     _select_backend(home)
     _assert_loaded(home, source="user")
