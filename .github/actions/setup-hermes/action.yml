@@ -4,6 +4,9 @@
 # give today. That installer builds Hermes' runtime with its package manager,
 # pm, on the Python pm pins. `release` runs the installer script of the latest
 # release tag, pinned to that tag: what a user who has not updated yet runs.
+# `legacy` does the same for the tag v2026.9.24, the last release whose
+# installer builds the older layout: Hermes in a virtualenv inside its checkout,
+# `~/.hermes/hermes-agent/venv`, which README.md's PyPI command is for.
 # Any other value is taken as a branch or tag.
 #
 # Shared by the install check and the live e2e workflow, so both run the plugin
@@ -15,7 +18,8 @@ inputs:
   channel:
     description: >-
       `release` for the latest Hermes release, `main` for what the installer
-      and `hermes update` check out by default, or any other branch or tag.
+      and `hermes update` check out by default, `legacy` for v2026.9.24, the
+      last release in the older layout, or any other branch or tag.
     default: release
 
 outputs:
@@ -41,12 +45,15 @@ runs:
             sleep $((attempt * 10))
           done
         }
-        if [ "$CHANNEL" = release ]; then
-          ref=$(retry gh api repos/NousResearch/hermes-agent/releases/latest --jq .tag_name)
-        else
-          ref=$CHANNEL
-        fi
-        args=(--non-interactive --skip-setup --skip-browser)
+        case "$CHANNEL" in
+          release) ref=$(retry gh api repos/NousResearch/hermes-agent/releases/latest --jq .tag_name) ;;
+          legacy) ref=v2026.9.24 ;;
+          *) ref=$CHANNEL ;;
+        esac
+        # The computer-use driver is no part of what a plugin needs. The
+        # installers of v2026.9.24 and of main take the flag; an unknown flag
+        # stops either of them, so add none they do not list.
+        args=(--non-interactive --skip-setup --skip-browser --skip-computer-use)
         [ "$ref" = main ] || args+=(--branch "$ref")
         # The script the one-line install serves, fetched through the API with the
         # job's token rather than from raw.githubusercontent.com, and saved rather

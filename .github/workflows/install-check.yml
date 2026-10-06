@@ -1,28 +1,44 @@
 # Installs the build into a real Hermes by every route README.md documents, and
 # checks what Hermes then loaded — see tests/install/test_install.py. Called by
 # ci.yml on every pull request, and by release-publish.yml before anything is
-# published. Needs the `release-artifacts` artifact of the calling run.
+# published, with the `release-artifacts` artifact of the calling run. It also
+# runs on its own every week, and on demand, building that artifact itself:
+# Hermes `main` moves while this repository stands still.
 #
 # Hermes is installed by its official installer (see
-# .github/actions/setup-hermes): once from the latest Hermes release and once
-# from main, which is what the installer and `hermes update` give today. One
-# job per Hermes runs every route in turn; each test puts back what it changed.
+# .github/actions/setup-hermes) three times: from v2026.9.24, the last release
+# whose installer builds the older layout README.md's PyPI command is for; from
+# the latest Hermes release; and from main, which is what the installer and
+# `hermes update` give today. One job per Hermes runs every route in turn; each
+# test puts back what it changed.
 name: Install check
 
 on:
   workflow_call:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # A calling workflow has built the artifact already; a run of its own has not.
+  build:
+    name: Build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/release-build.yml
+
   install:
     name: Hermes ${{ matrix.hermes }}
+    needs: build
+    # After the build above, or without it when that was skipped for a caller.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        hermes: [release, main]
+        hermes: [legacy, release, main]
     steps:
       - uses: actions/checkout@v7
       # 3.11: the Python the older installer settles on when it finds no newer one.
@@ -39,10 +55,30 @@ jobs:
         uses: ./.github/actions/setup-hermes
         with:
           channel: ${{ matrix.hermes }}
+      # The commit a pinned install moves from in the upgrade test.
+      - name: Find the commit of this plugin's latest release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          retry() {
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              [ "$attempt" = 5 ] && return 1
+              sleep $((attempt * 10))
+            done
+          }
+          tag=$(retry gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          # The commits endpoint peels an annotated tag down to its commit.
+          sha=$(retry gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          echo "Previous release: $tag at $sha" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Install by every route and check what Hermes loaded
         env:
           INSTALL_CHECK_CHANNEL: ${{ matrix.hermes }}
           INSTALL_CHECK_DISPOSABLE_HOME: "1"
           INSTALL_DIST: dist
+          INSTALL_PREV_REF: ${{ steps.previous.outputs.sha }}
           INSTALL_REF: ${{ github.sha }}
         run: python -m pytest -m install -v -rs -p no:cacheprovider

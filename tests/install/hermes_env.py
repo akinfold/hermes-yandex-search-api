@@ -1,7 +1,8 @@
 """Find the Python a Hermes install runs on, for the two layouts its installer makes.
 
-* The older layout — Hermes 0.21.5, and anything installed before 2026-09-24 and
-  not updated since — runs from the virtualenv inside the checkout:
+* The older layout — what the installer of Hermes v2026.9.24, the last release
+  to build it, sets up, and anything installed before 2026-09-24 and not
+  updated since — runs from the virtualenv inside the checkout:
   ``~/.hermes/hermes-agent/venv``.
 * The installer on Hermes ``main`` since 2026-09-24 runs Hermes from an
   environment its package manager, pm, builds and replaces. pm records the one

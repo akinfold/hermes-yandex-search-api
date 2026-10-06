@@ -94,8 +94,9 @@ default).
 ## Requirements
 
 - Hermes Agent `>= 0.18.1`; earlier releases do not register the `yandex`
-  web-search backend. Checked before every release against the latest Hermes
-  release and Hermes `main`, each installed by its official installer.
+  web-search backend. Checked on every pull request, weekly, and before every
+  release against Hermes v2026.9.24, the latest Hermes release and Hermes
+  `main`, each installed by its official installer.
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
   installs both. Options A and B install neither, and a Hermes set up by its
@@ -174,9 +175,10 @@ asks for credentials on this path — add them to `~/.hermes/.env` as in the
 > set up by its official installer normally has both packages the plugin needs:
 > `httpx` is a Hermes dependency, and `defusedxml` comes with
 > `youtube-transcript-api`, from Hermes' `youtube` extra, which is part of its
-> `[all]` set. The install check confirms both before every release, on the
-> latest Hermes release and on `main`. Hermes does not support adding packages
-> to that environment by hand, so there is no command for it here.
+> `[all]` set. The install check confirms both on every pull request, weekly,
+> and before every release, on Hermes v2026.9.24, the latest Hermes release and
+> `main`. Hermes does not support adding packages to that environment by hand,
+> so there is no command for it here.
 >
 > Hermes itself declares `defusedxml` directly only in its `wecom` extra, so an
 > environment built without the `youtube` and `wecom` extras can lack it, and the
@@ -203,14 +205,18 @@ installer runs Hermes from environments its package manager builds and replaces,
 and Hermes does not support adding packages to them by hand: use Option A or B.
 
 A Hermes in the older layout — one that runs from `~/.hermes/hermes-agent/venv`
-and keeps its own `uv` in `~/.hermes/bin`, with no `~/.hermes/installs`, which is
-what Hermes 0.21.5 and anything installed before that date and not updated since
-look like — takes the package like this:
+and keeps its own `uv` in `~/.hermes/bin`, with no `~/.hermes/installs` — takes
+the package like this:
 
 ```bash
 ~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api
 hermes plugins enable yandex
 ```
+
+That layout is what the installer of Hermes v2026.9.24, the last release to build
+it, sets up, and what anything installed before that date and not updated since
+looks like. Tell it by those directories, not by the version number Hermes
+reports.
 
 Switch such an install to Option A before you run `hermes update`: the update
 moves Hermes onto the new environments, and a package installed this way does
@@ -226,24 +232,36 @@ the [Quick start](#quick-start), and select the backend the same way.
 
 ### Upgrading
 
-Upgrade the way you installed. Option A — Hermes 0.21.5 and later install the
-new version from the source they recorded:
+Upgrade the way you installed. Option A — Hermes v2026.9.24 (0.21.5) and later
+install the new version from the source they recorded:
 
 ```bash
 hermes plugins update yandex
 ```
 
-Older Hermes cannot update an install from a plugin directory, and no Hermes
-updates one pinned with `--ref`: run the install command again with `--force`,
-which replaces the installed copy and keeps your credentials and backend
-selection.
+Older Hermes cannot update an install from a plugin directory: run the install
+command again with `--force`, which installs what the default branch holds now,
+replaces the installed copy, and keeps your credentials and backend selection.
 
 ```bash
 hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable --force
 ```
 
-Both scan the new version again, but unlike a first install neither stops to ask
-when Hermes' security scan reports a caution.
+An install pinned to a commit with `--ref` stays on that commit through both:
+`hermes plugins update` refuses to move it, and `--force` without a new `--ref`
+installs the same commit again. `hermes plugins list` shows the pin in its Source
+column, as `git pinned@` and the first eight characters of the commit. To move
+it, run the install command with `--force` and the new commit, its full
+40-character SHA, in place of `<commit>`:
+
+```bash
+hermes plugins install akinfold/hermes-yandex-search-api/hermes_yandex_search --enable --force --ref <commit>
+```
+
+Each of these scans the new version again. Unlike a first install, none of them
+stops to ask when Hermes' security scan reports a caution: for an install from a
+plugin directory, as here, they accept it and go on. A dangerous verdict still
+stops them.
 
 Option B from a clone — pull it, then copy the directory's contents over the
 installed copy. Running the `cp -r` above again would put the new copy inside the
@@ -265,10 +283,11 @@ Option C — upgrade the package in the same environment: in the older layout,
 ~/.hermes/bin/uv pip install --upgrade --python ~/.hermes/hermes-agent/venv/bin/python hermes-yandex-search-api
 ```
 
-Options A and B, and their upgrades, are checked before every release by
-installing the build into a real Hermes — the latest release and `main`, each set
-up by its official installer — exactly as written here; the Option C install is
-checked on the latest release while it still has the older layout. See
+Options A and B and their upgrades, moving a pinned install included, are
+checked before every release by installing the build into a real Hermes exactly
+as written here: Hermes v2026.9.24, the latest release, and `main`, each set up
+by its own official installer. The Option C install is checked against Hermes
+v2026.9.24, the last release whose installer builds the older layout. See
 [Checking the install paths](#checking-the-install-paths).
 
 ## Configuring the token in Hermes
@@ -474,11 +493,12 @@ selected, be the provider `web_search` calls. They also check that installing
 from the repository root still looks the way this README describes. A fast unit
 test keeps the commands in the tests and in this README identical.
 
-The **Install check** workflow runs them against the latest Hermes release and
-against Hermes `main` on every pull request, and on every release tag before
-anything is published: the GitHub Release and the PyPI upload both wait for it.
-They install into a real `~/.hermes`, so run them yourself only in a container or
-VM — see the docstring of `tests/install/test_install.py`.
+The **Install check** workflow runs them against Hermes v2026.9.24, the last
+release in the older layout, against the latest Hermes release, and against
+Hermes `main` — on every pull request, once a week, and on every release tag
+before anything is published: the GitHub Release and the PyPI upload both wait
+for it. They install into a real `~/.hermes`, so run them yourself only in a
+container or VM — see the docstring of `tests/install/test_install.py`.
 
 ## Related Hermes plugins
 

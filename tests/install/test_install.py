@@ -11,6 +11,10 @@ Where the tests depart from the README text, and why:
 
 * the Git install adds ``--ref`` with the commit under test, because the README
   command installs whatever the default branch holds at the time;
+* the pinned upgrade starts from the commit of the latest release of this
+  plugin, ``INSTALL_PREV_REF``, and moves to the commit under test. That
+  release is only the starting point: if it no longer installs on this Hermes,
+  the test skips rather than fails, or no fix for it could pass and be released;
 * the PyPI install names the wheel about to be published instead of the
   project, so it cannot pick up the release already on PyPI;
 * the drop-in archive is the one about to be attached to the release, and its
@@ -22,9 +26,9 @@ Where the tests depart from the README text, and why:
 
 The PyPI route applies only to a Hermes in the older layout (its virtualenv in
 ``~/.hermes/hermes-agent/venv``), the only one README.md gives a PyPI command
-for. On Hermes ``main``, which pm builds, it is skipped. On the latest release it
-must run: once a release ships the pm layout, the test fails there rather than
-skipping, because README.md then needs changing.
+for. It runs wherever the installed Hermes has that layout, and is skipped where
+pm built it. The ``legacy`` channel, Hermes v2026.9.24, must give the older
+layout: there the test fails rather than skips, because the setup is broken.
 
 Each test changes the Hermes it runs against, then puts back what it changed:
 the plugin directories, ``config.yaml`` (the enabled plugins and the selected
@@ -32,13 +36,17 @@ backend), ``.env``, and a package installed from PyPI. They still install into
 a real ``~/.hermes``, so they refuse to run unless
 ``INSTALL_CHECK_DISPOSABLE_HOME=1`` says that Hermes is a throwaway one.
 
-Deselected by default. The ``Install check`` workflow runs them before every
-release, against the latest Hermes release and against Hermes ``main``. To run
-them yourself, do it in a container or VM with Hermes installed by its
-installer, after building the artifacts the way ``release-build.yml`` does::
+Deselected by default. The ``Install check`` workflow runs them on every pull
+request, every week, and before every release, against Hermes v2026.9.24 (the
+``legacy`` channel), the latest Hermes release and Hermes ``main``. To run them
+yourself, do it in a disposable container or VM with Hermes installed by its
+installer, after building the artifacts the way ``release-build.yml`` does and
+pushing the commit under test, which Hermes clones from GitHub::
 
-    INSTALL_CHECK_DISPOSABLE_HOME=1 INSTALL_DIST=dist \\
-    INSTALL_REF="$(git rev-parse HEAD)" python -m pytest -m install
+    INSTALL_CHECK_DISPOSABLE_HOME=1 INSTALL_CHECK_CHANNEL=main INSTALL_DIST=dist \\
+    INSTALL_REF="$(git rev-parse HEAD)" \\
+    INSTALL_PREV_REF="$(git rev-parse "$(git describe --tags --abbrev=0)^{commit}")" \\
+    python -m pytest -m install
 """
 
 from __future__ import annotations
@@ -83,6 +91,8 @@ GIT_INSTALL = (
 )
 GIT_UPDATE = "hermes plugins update yandex"
 GIT_UPGRADE = GIT_INSTALL + " --force"
+#: Moves an install pinned with --ref; ``<commit>`` is a full 40-character SHA.
+GIT_REPIN = GIT_UPGRADE + " --ref <commit>"
 #: For a Hermes in the older layout only; see README.md, Option C.
 PYPI_INSTALL = (
     "~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python"
@@ -163,10 +173,10 @@ class Home:
         """Where Option B puts the plugin: ``~/.hermes/plugins/web/yandex``."""
         return self.hermes_home / "plugins" / "web" / PLUGIN
 
-    def run(
-        self, command: str, *, answers: str = "", check: bool = True, cwd: Path | None = None
-    ) -> str:
-        """Run a shell command as the user would; fail on a non-zero exit if *check*."""
+    def attempt(
+        self, command: str, *, answers: str = "", cwd: Path | None = None
+    ) -> tuple[int, str]:
+        """Run a shell command as the user would; return its exit status and output."""
         result = subprocess.run(
             ["bash", "-c", command],
             input=answers,
@@ -178,11 +188,16 @@ class Home:
             timeout=600,
             check=False,
         )
+        return result.returncode, result.stdout
+
+    def run(
+        self, command: str, *, answers: str = "", check: bool = True, cwd: Path | None = None
+    ) -> str:
+        """Run a shell command as the user would; fail on a non-zero exit if *check*."""
+        status, out = self.attempt(command, answers=answers, cwd=cwd)
         if check:
-            assert result.returncode == 0, (
-                f"`{command}` exited {result.returncode}:\n{result.stdout}"
-            )
-        return result.stdout
+            assert status == 0, f"`{command}` exited {status}:\n{out}"
+        return out
 
     def listed(self) -> list[dict]:
         """Rows for this plugin in ``hermes plugins list``."""
@@ -302,6 +317,12 @@ def _assert_loaded(home: Home, *, source: str, version: str | None = VERSION) ->
     assert report["web_search"] == {"provider": PLUGIN, "available": True}, report["web_search"]
 
 
+def _assert_pinned(home: Home, commit: str) -> None:
+    """``hermes plugins list`` shows the install pinned to *commit*, as ``git pinned@<sha8>``."""
+    pin = f"git pinned@{commit.lower()[:8]}"
+    assert [row["source"] for row in home.listed()] == [pin], home.listed()
+
+
 def _assert_hermes_has_the_dependencies(home: Home) -> None:
     """README.md: Options A and B install no dependencies, and Hermes needs none."""
     home.run(f"'{hermes_python(home.hermes_home)}' -c 'import {', '.join(DEPENDENCIES)}'")
@@ -321,6 +342,7 @@ def test_readme_gives_the_commands_under_test() -> None:
         GIT_INSTALL,
         GIT_UPDATE,
         GIT_UPGRADE,
+        GIT_REPIN,
         PYPI_INSTALL,
         COPY_INSTALL,
         COPY_UPGRADE,
@@ -331,7 +353,11 @@ def test_readme_gives_the_commands_under_test() -> None:
         SELECT_BACKEND,
     )
     for command in commands:
-        assert command in readme, f"README.md no longer says:\n{command}"
+        # Whole lines: GIT_INSTALL begins GIT_UPGRADE, which begins GIT_REPIN, so
+        # a plain substring would survive the shorter command's removal.
+        assert re.search(rf"(?m)^{re.escape(command)}$", readme), (
+            f"README.md no longer says, on lines of its own:\n{command}"
+        )
     assert f"~/.hermes/plugins/web/{PLUGIN}/plugin.yaml" in readme
 
 
@@ -359,6 +385,60 @@ def test_git_install_asks_for_credentials_loads_and_upgrades(home: Home) -> None
 
 
 @install
+def test_git_install_pinned_with_ref_moves_only_with_a_new_ref(home: Home) -> None:
+    """README.md: ``--force`` alone keeps a pinned install on its commit; ``--ref`` moves it.
+
+    The install starts pinned to the latest release of this plugin and moves to
+    the commit under test. With no earlier commit to start from, it starts on the
+    commit under test, and the move is skipped.
+
+    The latest release is setup here, not under test: when Hermes has changed so
+    that its install exits non-zero, the test skips. Failing would block every
+    fix, and the release of one, since publishing waits for this check. Nor does
+    the test check that this release loads; only the commit under test has to.
+    """
+    ref = _required("INSTALL_REF")
+    previous = os.environ.get("INSTALL_PREV_REF", "")
+    start = previous if previous and previous != ref else ref
+    answers = "".join(PROMPT_ANSWERS[name] + "\n" for name in REQUIRED_ENV)
+    command = f"{GIT_INSTALL} --ref {start}"
+    if start == ref:
+        home.run(command, answers=answers)
+    else:
+        status, out = home.attempt(command, answers=answers)
+        if status != 0:
+            pytest.skip(
+                f"the latest release, {start[:8]}, no longer installs on this Hermes "
+                f"(`{command}` exited {status}), so the pin move is not checked:\n{out}"
+            )
+    _assert_pinned(home, start)
+    # Selected before the moves, so the check at the end shows the move kept it.
+    _select_backend(home)
+
+    out = _flat(home.run(GIT_UPDATE, check=False))
+    assert "is pinned" in out, f"`{GIT_UPDATE}` did not refuse a pinned install:\n{out}"
+    _assert_pinned(home, start)
+
+    # The trap README.md warns about: the plain upgrade installs the pinned commit again.
+    _make_stale(home)
+    home.run(GIT_UPGRADE)
+    _assert_pinned(home, start)
+    [plugin] = [plugin for plugin in home.probe()["plugins"] if plugin["name"] == PLUGIN]
+    assert plugin["version"] != "0.0.0", f"`{GIT_UPGRADE}` replaced nothing: {plugin}"
+
+    if start == ref:
+        pytest.skip(
+            "INSTALL_PREV_REF is unset or is the commit under test, so there is no earlier "
+            "commit to move the pin from; checked only that --force keeps the pin"
+        )
+    _make_stale(home)
+    home.run(GIT_REPIN.replace("<commit>", ref))
+    assert home.credentials() == PROMPT_ANSWERS
+    _assert_pinned(home, ref)
+    _assert_loaded(home, source="user")
+
+
+@install
 def test_git_install_updates_with_hermes_plugins_update(home: Home) -> None:
     """README.md's usual upgrade for Option A: Hermes' own ``plugins update``.
 
@@ -378,10 +458,11 @@ def test_git_install_updates_with_hermes_plugins_update(home: Home) -> None:
 @install
 def test_pypi_install_loads(home: Home) -> None:
     if is_pm_install(home.hermes_home):
-        if os.environ.get("INSTALL_CHECK_CHANNEL") == "release":
+        if os.environ.get("INSTALL_CHECK_CHANNEL") == "legacy":
             pytest.fail(
-                "the latest Hermes release runs from pm-built environments: README.md's "
-                "Option C command no longer applies to it, so change README.md and this test"
+                "the legacy channel installs Hermes v2026.9.24, whose installer builds the "
+                "older layout, yet this Hermes runs from pm-built environments: the Hermes "
+                "setup is broken, and Option C goes unchecked"
             )
         pytest.skip(
             "this Hermes runs from environments its package manager builds; README.md gives "
