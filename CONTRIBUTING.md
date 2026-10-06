@@ -72,12 +72,27 @@ wheel into a real Hermes set up by its official installer, using the commands th
 README gives, and asks Hermes what it loaded. Change an install
 instruction in the README and you change the test:
 `test_readme_gives_the_commands_under_test`, which runs with the unit tests, fails
-until the two agree. The **Install check** workflow runs it on every pull request
-against the latest Hermes release and against Hermes `main`, and the release
-workflow runs it on the artifacts it has just built: the GitHub Release and the
-PyPI upload wait for it. It installs into the real `~/.hermes`, so run it yourself
-only in a container or VM; the docstring of `tests/install/test_install.py` says
-how.
+until the two agree.
+
+The **Install check** workflow runs it against three Hermes installs, each made
+by the official installer of that Hermes: `legacy`, Hermes v2026.9.24, the last
+release whose installer builds the older layout the PyPI command is for;
+`release`, the latest Hermes release; and `main`. It runs on every pull request,
+and the release workflow runs it on the artifacts it has just built: the GitHub
+Release and the PyPI upload wait for it. It also runs on its own every Monday and
+on demand from the Actions tab, because Hermes `main` changes while this
+repository does not.
+
+The check installs into the real `~/.hermes`, so run it yourself only in a
+disposable container or VM, never where you use Hermes: for example an
+`ubuntu:24.04` container with a non-root user, Hermes installed there by the
+installer of the channel you want — saved to a file and run with
+`--non-interactive --skip-setup --skip-browser --skip-computer-use`, plus
+`--branch` and the tag for a release (`v2026.9.24` for `legacy`) — and the
+commit under test pushed, since Hermes clones it from GitHub. The v2026.9.24
+installer also needs a C++ compiler (`build-essential` on Ubuntu), which GitHub
+runners already have. The docstring of `tests/install/test_install.py` lists the
+variables to set. Remove the container afterwards.
 
 ## Commit & PR conventions
 
