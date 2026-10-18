@@ -2,15 +2,17 @@
 # checks what Hermes then loaded — see tests/install/test_install.py. Called by
 # ci.yml on every pull request, and by release-publish.yml before anything is
 # published, with the `release-artifacts` artifact of the calling run. It also
-# runs on its own every week, and on demand, building that artifact itself:
-# Hermes `main` moves while this repository stands still.
+# runs on its own every week, and on demand, building that artifact itself,
+# because Hermes moves while this repository stands still: `main` every day,
+# its releases every few days.
 #
 # Hermes is installed by its official installer (see
 # .github/actions/setup-hermes) three times: from v2026.9.24, the last release
 # whose installer builds the older layout README.md's PyPI command is for; from
-# the latest Hermes release; and from main, which is what the installer and
-# `hermes update` give today. One job per Hermes runs every route in turn; each
-# test puts back what it changed.
+# the latest Hermes release, where `hermes update` and the one-line installer
+# put a user; and from the tip of main, where changes land before any release
+# has them. One job per Hermes runs every route in turn; each test puts back
+# what it changed.
 name: Install check
 
 on:
