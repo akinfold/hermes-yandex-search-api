@@ -42,13 +42,14 @@ MAX_XML_BYTES = 2 * 1024 * 1024
 
 #: The oldest Expat this plugin parses with: a floor, not a promise that Expat
 #: has no bugs. The guards _parse_xml relies on work on any Expat: refusing the
-#: DTD rules out every entity and every external fetch, and MAX_XML_BYTES
-#: bounds time and memory. 2.4.5 stopped Expat passing malformed UTF-8 and
-#: namespace separators on to the application (CVE-2022-25235, CVE-2022-25236).
-#: Python can use the system libexpat instead of its own copy, so the version is
-#: checked at run time. Distributions backport fixes without raising the
-#: version, so the floor stays below what they ship (2.5.0 on Debian 12 and
-#: RHEL 9, 2.4.7 on Ubuntu 22.04).
+#: DTD rules out every entity and every external fetch, reading only UTF-8 keeps
+#: Expat's UTF-16 decoder out of reach (it let malformed surrogates through
+#: before 2.8.5, CVE-2026-93990), and MAX_XML_BYTES bounds time and memory.
+#: 2.4.5 stopped Expat passing malformed UTF-8 and namespace separators on to
+#: the application (CVE-2022-25235, CVE-2022-25236). Python can use the system
+#: libexpat instead of its own copy, so the version is checked at run time.
+#: Distributions backport fixes without raising the version, so the floor stays
+#: below what they ship (2.5.0 on Debian 12 and RHEL 9, 2.4.7 on Ubuntu 22.04).
 MIN_EXPAT_VERSION = (2, 4, 5)
 
 #: Where the README explains which Expat the plugin needs.
@@ -380,13 +381,31 @@ def _check_expat_version() -> None:
         )
 
 
+def _is_utf8(raw: bytes) -> bool:
+    """Whether *raw* is UTF-8 without a NUL byte, the only form Expat gets to read.
+
+    Even when told the encoding, Expat switches to UTF-16 at a UTF-16 byte order
+    mark, which is never UTF-8, or at a NUL byte next to the first ``<``, which is
+    UTF-8 but never XML.
+    """
+    if b"\x00" in raw:
+        return False
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def _check_document(raw: bytes) -> None:
-    """Refuse a document larger than :data:`MAX_XML_BYTES`."""
+    """Refuse a document larger than :data:`MAX_XML_BYTES` or not in UTF-8."""
     if len(raw) > MAX_XML_BYTES:
         raise YandexSearchError(
             f"Refusing to parse the Yandex XML response: it is {len(raw)} bytes, "
             f"more than the limit of {MAX_XML_BYTES}"
         )
+    if not _is_utf8(raw):
+        raise YandexSearchError("Rejected Yandex XML response: it is not UTF-8")
 
 
 def _clark(name: str) -> str:
@@ -402,7 +421,8 @@ def _refuse_dtd(*_args: object) -> None:
 def _parse_xml(raw: bytes) -> ET.Element:
     """Parse an untrusted XML document into the tree ``ElementTree.fromstring`` would build.
 
-    The document must be at most :data:`MAX_XML_BYTES` long. Entities can only be
+    Yandex sends UTF-8, so the document must be UTF-8, whatever encoding it
+    declares, and at most :data:`MAX_XML_BYTES` long. Entities can only be
     declared in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to
     expand (billion laughs, quadratic blowup) and no external entity or DTD to
     resolve; Expat itself never opens files or connections. ElementTree's own
@@ -412,7 +432,9 @@ def _parse_xml(raw: bytes) -> ET.Element:
     _check_expat_version()
     _check_document(raw)
     builder = ET.TreeBuilder()
-    parser = expat.ParserCreate(namespace_separator="}")
+    # The encoding given here overrides the one the document declares, so Expat
+    # never calls back into Python's codecs for an encoding it lacks.
+    parser = expat.ParserCreate(encoding="utf-8", namespace_separator="}")
     parser.StartDoctypeDeclHandler = _refuse_dtd
     parser.StartElementHandler = lambda tag, attrib: builder.start(
         _clark(tag), {_clark(name): value for name, value in attrib.items()}
@@ -431,8 +453,8 @@ def _parse_web_xml(raw: bytes) -> list[WebResult]:
 
     The document is untrusted: :func:`_parse_xml` refuses any DTD, so a malicious
     response cannot mount an entity-expansion (billion laughs) or external-entity
-    (XXE) attack. It also refuses a document that is too large, and refuses to
-    parse at all on an Expat older than :data:`MIN_EXPAT_VERSION`.
+    (XXE) attack. It also refuses a document that is too large or not UTF-8, and
+    refuses to parse at all on an Expat older than :data:`MIN_EXPAT_VERSION`.
     """
     root = _parse_xml(raw)
     _strip_namespaces(root)

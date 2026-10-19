@@ -33,8 +33,9 @@ isolation. Anything that talks to the host belongs in `provider.py` /
 The plugin needs nothing beyond `httpx` and the standard library: the
 recommended installs copy only the plugin directory, so nothing else would be
 installed. Keep it that way. Parse XML only through `_parse_xml` in
-`client.py`. It refuses any DTD and any document larger than `MAX_XML_BYTES`,
-and refuses to parse at all on an Expat older than `MIN_EXPAT_VERSION`.
+`client.py`. It refuses any DTD, any document that is not UTF-8 or is larger
+than `MAX_XML_BYTES`, and refuses to parse at all on an Expat older than
+`MIN_EXPAT_VERSION`.
 
 ## Development setup
 

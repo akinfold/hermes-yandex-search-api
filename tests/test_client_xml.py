@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import socket
 from collections.abc import Iterator
 from pathlib import Path
@@ -22,6 +23,8 @@ from .conftest import SAMPLE_WEB_XML
 #: amplification, for one) fail with other messages, so matching this proves the
 #: refusal happened before Expat expanded anything.
 DTD_REFUSED = "Rejected unsafe Yandex XML response: it declares a DTD"
+
+NOT_UTF8 = "Rejected Yandex XML response: it is not UTF-8"
 
 FILE_TEXT = "the contents of a local file"
 
@@ -157,6 +160,55 @@ def test_the_size_limit_stays_about_ten_times_a_real_report() -> None:
     assert 1024 * 1024 < MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
+# -- UTF-8 only ----------------------------------------------------------------
+
+#: A lone UTF-16 high surrogate followed by "A": Expat before 2.8.5 decodes the
+#: pair as U+10041, a character the document never contained (CVE-2026-93990).
+LONE_SURROGATE = (
+    codecs.BOM_UTF16_LE
+    + "<?xml version='1.0' encoding='utf-16'?><y>".encode("utf-16-le")
+    + b"\x00\xd8"
+    + "A</y>".encode("utf-16-le")
+)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        LONE_SURROGATE,
+        codecs.BOM_UTF16_LE + "<r>x</r>".encode("utf-16-le"),
+        codecs.BOM_UTF16_BE + "<r>x</r>".encode("utf-16-be"),
+        "<r>x</r>".encode("utf-16-le"),
+        "<r>x</r>".encode("utf-16-be"),
+        b"<?xml version='1.0' encoding='windows-1252'?><r>\x80</r>",
+        b"<r>a\x00b</r>",
+    ],
+    ids=[
+        "lone-surrogate",
+        "utf-16le-bom",
+        "utf-16be-bom",
+        "utf-16le",
+        "utf-16be",
+        "windows-1252",
+        "nul",
+    ],
+)
+def test_refuses_a_document_that_is_not_utf8(raw: bytes) -> None:
+    with pytest.raises(YandexSearchError, match=NOT_UTF8):
+        _parse_xml(raw)
+
+
+@pytest.mark.parametrize("declared", ["windows-1252", "iso-8859-1", "utf-16", "x-unknown"])
+def test_reads_utf8_whatever_encoding_is_declared(declared: str) -> None:
+    raw = f"<?xml version='1.0' encoding='{declared}'?><r>\u20ac\u0436</r>".encode()
+    assert _parse_xml(raw).text == "\u20ac\u0436"
+
+
+def test_accepts_a_utf8_byte_order_mark() -> None:
+    (result,) = _parse_web_xml(codecs.BOM_UTF8 + report())
+    assert result.title == "Title"
+
+
 def test_an_undeclared_entity_is_a_parse_error() -> None:
     with pytest.raises(YandexSearchError, match="Could not parse Yandex XML response: undefined"):
         _parse_web_xml(report(title="&xxe;"))
@@ -164,10 +216,9 @@ def test_an_undeclared_entity_is_a_parse_error() -> None:
 
 def test_builds_the_tree_elementtree_would() -> None:
     root = _parse_xml(
-        # windows-1252 is not built into Expat: Python's codec decodes it.
-        b"<?xml version='1.0' encoding='windows-1252'?>"
+        b"<?xml version='1.0' encoding='utf-8'?>"
         b"<y:a xmlns:y='urn:y' xmlns='urn:d' y:id='1' plain='2'>"
-        b"<b>\x80 <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
+        b"<b>\xe2\x82\xac <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
     )
     assert root.tag == "{urn:y}a"
     assert root.attrib == {"{urn:y}id": "1", "plain": "2"}
