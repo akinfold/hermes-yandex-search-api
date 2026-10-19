@@ -100,13 +100,20 @@ default).
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python package `httpx >= 0.24`, which Hermes itself depends on. Option C
   (PyPI) installs it; options A and B use the copy Hermes already has.
-- Expat 2.6.0 or newer in the Python that runs Hermes. The plugin parses
-  Yandex's XML with the standard library, refuses any document that declares a
-  DTD, and refuses to parse at all — saying which Expat it found — on an older
-  Expat. Python 3.11.9, 3.12.3 and every 3.13 and 3.14 release bundle a newer
-  one; an older patch release, or a Python built against an older system
-  libexpat, falls short. `python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"`
-  shows which one a Python uses.
+- Expat 2.4.5 or newer in the Python that runs Hermes. Every CPython release
+  from 3.11.0 bundles a newer one, and so does the system libexpat that
+  distribution Pythons use instead: 2.5.0 on Debian 12 (where the installer of
+  Hermes v2026.9.24 picks the system `python3.11`) and RHEL 9, 2.4.7 on Ubuntu
+  22.04. Distributions backport security fixes without raising that number,
+  and the plugin goes by the number alone.
+  `python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"` shows which one a
+  Python uses. On an older Expat the plugin refuses to parse at all, naming the
+  version it found. Hermes' current installer brings its own Python with a
+  recent Expat; before the v2026.9.24 installer, `uv python install 3.11` makes
+  it pick uv's Python over the system one.
+- The plugin parses Yandex's XML with the standard library. It refuses, saying
+  why, a response that declares a DTD or is larger than 2 MiB (100 results
+  take about 0.2 MiB).
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 

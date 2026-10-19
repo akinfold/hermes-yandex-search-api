@@ -27,19 +27,32 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # ElementTree only holds the parsed tree: _parse_xml drives Expat itself, checks
-# the Expat version first, and refuses any DTD.
+# the document and the Expat version first, and refuses any DTD.
 from xml.etree import ElementTree as ET  # nosec B405
 from xml.parsers import expat
 
 import httpx
 
-#: The oldest Expat _parse_xml parses with. Refusing any DTD rules out the
-#: entity attacks on every Expat; what is left is "large tokens"
-#: (CVE-2023-52425), a quadratic runtime that needs no DTD and that CPython
-#: exposes by feeding Expat 1 MiB at a time. Expat 2.6.0 fixed it. Python can be
-#: built against a system libexpat older than the copy it bundles, so the
-#: version is checked at run time.
-MIN_EXPAT_VERSION = (2, 6, 0)
+#: The largest XML document _parse_xml accepts, in bytes: about ten times the
+#: largest 100-result report measured (213 KB). It bounds what a hostile
+#: document can cost on any Expat, including a token longer than the 1 MiB
+#: chunks CPython feeds Expat, which Expat before 2.6.0 re-scans once per chunk
+#: (CVE-2023-52425).
+MAX_XML_BYTES = 2 * 1024 * 1024
+
+#: The oldest Expat this plugin parses with: a floor, not a promise that Expat
+#: has no bugs. The guards _parse_xml relies on work on any Expat: refusing the
+#: DTD rules out every entity and every external fetch, and MAX_XML_BYTES
+#: bounds time and memory. 2.4.5 stopped Expat passing malformed UTF-8 and
+#: namespace separators on to the application (CVE-2022-25235, CVE-2022-25236).
+#: Python can use the system libexpat instead of its own copy, so the version is
+#: checked at run time. Distributions backport fixes without raising the
+#: version, so the floor stays below what they ship (2.5.0 on Debian 12 and
+#: RHEL 9, 2.4.7 on Ubuntu 22.04).
+MIN_EXPAT_VERSION = (2, 4, 5)
+
+#: Where the README explains which Expat the plugin needs.
+REQUIREMENTS_URL = "https://github.com/akinfold/hermes-yandex-search-api#requirements"
 
 DEFAULT_BASE_URL = "https://searchapi.api.cloud.yandex.net"
 DEFAULT_SEARCH_TYPE = "SEARCH_TYPE_RU"
@@ -363,7 +376,16 @@ def _check_expat_version() -> None:
         raise YandexSearchError(
             "Refusing to parse the Yandex XML response: this Python uses Expat "
             f"{_version_text(found)}, older than {_version_text(MIN_EXPAT_VERSION)}, the "
-            "oldest safe for untrusted XML. Use a Python built with a newer Expat."
+            f"oldest this plugin parses with. See {REQUIREMENTS_URL}"
+        )
+
+
+def _check_document(raw: bytes) -> None:
+    """Refuse a document larger than :data:`MAX_XML_BYTES`."""
+    if len(raw) > MAX_XML_BYTES:
+        raise YandexSearchError(
+            f"Refusing to parse the Yandex XML response: it is {len(raw)} bytes, "
+            f"more than the limit of {MAX_XML_BYTES}"
         )
 
 
@@ -380,13 +402,15 @@ def _refuse_dtd(*_args: object) -> None:
 def _parse_xml(raw: bytes) -> ET.Element:
     """Parse an untrusted XML document into the tree ``ElementTree.fromstring`` would build.
 
-    Entities can only be declared in a DTD, so refusing the DTD at ``<!DOCTYPE``
-    leaves no entity to expand (billion laughs, quadratic blowup) and no external
-    entity or DTD to resolve; Expat itself never opens files or connections.
-    ElementTree's own parser keeps parsing after a handler raises, so Expat is
-    driven here directly: a handler that raises stops it on the spot.
+    The document must be at most :data:`MAX_XML_BYTES` long. Entities can only be
+    declared in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to
+    expand (billion laughs, quadratic blowup) and no external entity or DTD to
+    resolve; Expat itself never opens files or connections. ElementTree's own
+    parser keeps parsing after a handler raises, so Expat is driven here
+    directly: a handler that raises stops it on the spot.
     """
     _check_expat_version()
+    _check_document(raw)
     builder = ET.TreeBuilder()
     parser = expat.ParserCreate(namespace_separator="}")
     parser.StartDoctypeDeclHandler = _refuse_dtd
@@ -407,7 +431,8 @@ def _parse_web_xml(raw: bytes) -> list[WebResult]:
 
     The document is untrusted: :func:`_parse_xml` refuses any DTD, so a malicious
     response cannot mount an entity-expansion (billion laughs) or external-entity
-    (XXE) attack, and refuses to parse at all on an Expat too old to trust.
+    (XXE) attack. It also refuses a document that is too large, and refuses to
+    parse at all on an Expat older than :data:`MIN_EXPAT_VERSION`.
     """
     root = _parse_xml(raw)
     _strip_namespaces(root)

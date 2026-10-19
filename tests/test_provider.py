@@ -56,7 +56,7 @@ def test_search_returns_success_envelope(
     ("dtd", "expat_version", "error"),
     [
         ("<!DOCTYPE r [<!ENTITY e 'x'>]>", None, "it declares a DTD"),
-        ("", (2, 5, 0), "this Python uses Expat 2.5.0, older than 2.6.0"),
+        ("", (2, 4, 4), "this Python uses Expat 2.4.4, older than 2.4.5"),
     ],
     ids=["dtd", "old-expat"],
 )

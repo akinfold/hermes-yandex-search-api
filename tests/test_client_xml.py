@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from hermes_yandex_search import client
 from hermes_yandex_search.client import (
+    MAX_XML_BYTES,
     MIN_EXPAT_VERSION,
     YandexSearchError,
     _parse_web_xml,
@@ -125,15 +126,35 @@ def test_refuses_an_external_dtd(listener: socket.socket, local_file: Path) -> N
 @pytest.mark.parametrize("where", ["text", "attribute"])
 def test_large_tokens_are_harmless(where: str) -> None:
     # One token larger than the 1 MiB chunks CPython feeds Expat: the case of
-    # CVE-2023-52425, quadratic before Expat 2.6.0. On a supported Expat it is
-    # just a long title or URL.
-    big = "A" * (5 * 1024 * 1024)
+    # CVE-2023-52425, which Expat before 2.6.0 re-scans once per chunk. Under
+    # MAX_XML_BYTES that is a few re-scans at most; here it is a long title or URL.
+    big = "A" * (MAX_XML_BYTES - 1024)
+    assert len(big) > 1024 * 1024
     if where == "text":
         (result,) = _parse_web_xml(report(title=big))
         assert result.title == big
     else:
         (result,) = _parse_web_xml(report(url_attr=f"https://x.example/{big}"))
         assert result.url == f"https://x.example/{big}"
+
+
+def test_refuses_a_document_over_the_size_limit() -> None:
+    title = "A" * (MAX_XML_BYTES - len(report(title="")))
+    (result,) = _parse_web_xml(report(title=title))
+    assert result.title == title
+
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_web_xml(report(title=title + "A"))
+    assert str(exc_info.value) == (
+        f"Refusing to parse the Yandex XML response: it is {MAX_XML_BYTES + 1} bytes, "
+        f"more than the limit of {MAX_XML_BYTES}"
+    )
+
+
+def test_the_size_limit_stays_about_ten_times_a_real_report() -> None:
+    # 100 results came to 130-213 KB in October 2026. Much lower risks refusing a
+    # real report; much higher lets a hostile one cost more memory.
+    assert 1024 * 1024 < MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
 def test_an_undeclared_entity_is_a_parse_error() -> None:
@@ -169,7 +190,7 @@ def test_parses_a_report_with_prefixed_names() -> None:
 # -- which Expat it parses with -----------------------------------------------
 
 
-@pytest.mark.parametrize("version", [(2, 5, 0), (2, 5, 99), (1, 95, 8)])
+@pytest.mark.parametrize("version", [(2, 4, 4), (2, 3, 99), (1, 95, 8)])
 def test_refuses_to_parse_on_an_old_expat(
     monkeypatch: pytest.MonkeyPatch, version: tuple[int, int, int]
 ) -> None:
@@ -178,10 +199,21 @@ def test_refuses_to_parse_on_an_old_expat(
     with pytest.raises(YandexSearchError) as exc_info:
         _parse_web_xml(SAMPLE_WEB_XML.encode("utf-8"))
     message = str(exc_info.value)
-    assert f"this Python uses Expat {found}, older than 2.6.0" in message
+    assert f"this Python uses Expat {found}, older than 2.4.5, the oldest" in message
+    assert message.endswith("See https://github.com/akinfold/hermes-yandex-search-api#requirements")
 
 
-@pytest.mark.parametrize("version", [MIN_EXPAT_VERSION, (2, 6, 1), (2, 10, 0), (3, 0, 0)])
+def test_the_requirements_link_names_a_readme_section() -> None:
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert client.REQUIREMENTS_URL.endswith("#requirements")
+    assert "\n## Requirements\n" in readme
+
+
+# 2.4.7: Ubuntu 22.04's libexpat; 2.5.0: Debian 12's and RHEL 9's. 2.10.0 also
+# catches a version compared as text.
+@pytest.mark.parametrize(
+    "version", [MIN_EXPAT_VERSION, (2, 4, 7), (2, 5, 0), (2, 6, 0), (2, 10, 0), (3, 0, 0)]
+)
 def test_parses_on_a_supported_expat(
     monkeypatch: pytest.MonkeyPatch, version: tuple[int, int, int]
 ) -> None:
@@ -189,10 +221,11 @@ def test_parses_on_a_supported_expat(
     assert len(_parse_web_xml(SAMPLE_WEB_XML.encode("utf-8"))) == 2
 
 
-def test_readme_names_the_same_minimum() -> None:
+def test_readme_names_the_same_minimum_and_size_limit() -> None:
     minimum = ".".join(map(str, MIN_EXPAT_VERSION))
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
     assert f"Expat {minimum} or newer" in readme
+    assert f"larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in readme
 
 
 def test_this_python_has_a_supported_expat() -> None:
