@@ -100,17 +100,32 @@ default).
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
 - The Python package `httpx >= 0.24`, which Hermes itself depends on. Option C
   (PyPI) installs it; options A and B use the copy Hermes already has.
-- Expat 2.4.5 or newer in the Python that runs Hermes. Every CPython release
-  from 3.11.0 bundles a newer one, and so does the system libexpat that
-  distribution Pythons use instead: 2.5.0 on Debian 12 (where the installer of
-  Hermes v2026.9.24 picks the system `python3.11`) and RHEL 9, 2.4.7 on Ubuntu
-  22.04. Distributions backport security fixes without raising that number,
-  and the plugin goes by the number alone.
-  `python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"` shows which one a
-  Python uses. On an older Expat the plugin refuses to parse at all, naming the
-  version it found. Hermes' current installer brings its own Python with a
-  recent Expat; before the v2026.9.24 installer, `uv python install 3.11` makes
-  it pick uv's Python over the system one.
+- Expat 2.4.5 or newer in the Python that runs Hermes. On an older Expat the
+  plugin refuses to parse at all, naming the version it found.
+
+  Hermes' current installer brings its own Python, with a recent Expat. To
+  check it anyway, use the interpreter `<environment>/bin/python`, where
+  `<environment>` is the `packages.venv.environment` value in
+  `~/.hermes/installs/<id>/facts.json`. A Hermes in the older layout (see
+  Option C below) runs on the Python its installer found:
+
+  ```bash
+  ~/.hermes/hermes-agent/venv/bin/python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"
+  ```
+
+  Every CPython release from 3.11.0 bundles a newer Expat. A distribution's
+  own Python uses the system libexpat instead, and current distributions ship
+  one new enough: 2.5.0 on Debian 12 (where the installer of Hermes v2026.9.24
+  picks the system `python3.11`) and RHEL 9, 2.4.7 on Ubuntu 22.04. Older
+  releases ship an older one: RHEL 8 before its 2.5.0 update, 2.2.10 on
+  Debian 11, 2.2.9 on Ubuntu 20.04. These numbers come from the distributions'
+  package versions, not from CI. Distributions backport security fixes without
+  raising the version, and the plugin goes by the number alone.
+
+  On an older Expat, `hermes update` moves Hermes onto the current installer's
+  own Python (Option C users: switch to Option A first, see below). To stay on
+  the older layout, run `~/.hermes/bin/uv python install 3.11` and re-run the
+  v2026.9.24 installer, which then builds its venv on uv's Python.
 - The plugin parses Yandex's XML with the standard library. It refuses, saying
   why, a response that declares a DTD or is not UTF-8, and an XML document
   larger than 2 MiB; the largest live 100-result report measured came to about
