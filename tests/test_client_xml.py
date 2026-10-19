@@ -130,7 +130,7 @@ def test_refuses_an_external_dtd(listener: socket.socket, local_file: Path) -> N
 def test_large_tokens_are_harmless(where: str) -> None:
     # One token larger than the 1 MiB chunks CPython feeds Expat: the case of
     # CVE-2023-52425, which Expat before 2.6.0 re-scans once per chunk. Under
-    # MAX_XML_BYTES that is a few re-scans at most; here it is a long title or URL.
+    # MAX_XML_BYTES that is at most one re-scan; here it is a long title or URL.
     big = "A" * (MAX_XML_BYTES - 1024)
     assert len(big) > 1024 * 1024
     if where == "text":
@@ -146,18 +146,29 @@ def test_refuses_a_document_over_the_size_limit() -> None:
     (result,) = _parse_web_xml(report(title=title))
     assert result.title == title
 
+    # One byte over the limit, with a DTD and a byte that is never UTF-8: only
+    # the size is reported, so the size check ran before the UTF-8 check and
+    # before Expat saw anything.
+    dtd = "<!DOCTYPE yandexsearch [<!ENTITY t 'tea'>]>"
+    oversized = report(dtd=dtd, title=title[len(dtd) :]) + b"\xff"
+    assert len(oversized) == MAX_XML_BYTES + 1
     with pytest.raises(YandexSearchError) as exc_info:
-        _parse_web_xml(report(title=title + "A"))
+        _parse_web_xml(oversized)
     assert str(exc_info.value) == (
         f"Refusing to parse the Yandex XML response: it is {MAX_XML_BYTES + 1} bytes, "
         f"more than the limit of {MAX_XML_BYTES}"
     )
 
 
-def test_the_size_limit_stays_about_ten_times_a_real_report() -> None:
-    # 100 results came to 130-213 KB in October 2026. Much lower risks refusing a
-    # real report; much higher lets a hostile one cost more memory.
-    assert 1024 * 1024 < MAX_XML_BYTES <= 4 * 1024 * 1024
+#: The largest live 100-result report measured, in October 2026: about 445 KB.
+LARGEST_REPORT_MEASURED = 445_000
+
+
+def test_the_size_limit_leaves_a_margin_over_real_reports() -> None:
+    # Much less margin risks refusing a real report; a much higher limit lets a
+    # hostile one cost more time and memory.
+    assert MAX_XML_BYTES >= 4 * LARGEST_REPORT_MEASURED
+    assert MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
 # -- UTF-8 only ----------------------------------------------------------------
@@ -275,8 +286,9 @@ def test_parses_on_a_supported_expat(
 def test_readme_names_the_same_minimum_and_size_limit() -> None:
     minimum = ".".join(map(str, MIN_EXPAT_VERSION))
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert f"Expat {minimum} or newer" in readme
-    assert f"larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in readme
+    text = " ".join(readme.split())
+    assert f"Expat {minimum} or newer" in text
+    assert f"an XML document larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in text
 
 
 def test_this_python_has_a_supported_expat() -> None:

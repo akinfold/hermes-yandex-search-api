@@ -33,11 +33,14 @@ from xml.parsers import expat
 
 import httpx
 
-#: The largest XML document _parse_xml accepts, in bytes: about ten times the
-#: largest 100-result report measured (213 KB). It bounds what a hostile
-#: document can cost on any Expat, including a token longer than the 1 MiB
-#: chunks CPython feeds Expat, which Expat before 2.6.0 re-scans once per chunk
-#: (CVE-2023-52425).
+#: The largest XML document _parse_xml accepts, in bytes: about 4.7 times the
+#: largest live 100-result report measured (about 445 KB). pyexpat feeds Expat
+#: chunks of 1 MiB, so a document this size takes at most two XML_Parse calls,
+#: and on Expat before 2.6.0 a token spanning them is re-scanned at most once:
+#: CVE-2023-52425 is bounded, not unreachable. The cap also bounds the time and
+#: memory of any cost in Expat not known yet. pyexpat holds the GIL while it
+#: parses, so a slow parse blocks the whole Hermes process; the cap keeps that
+#: short.
 MAX_XML_BYTES = 2 * 1024 * 1024
 
 #: The oldest Expat this plugin parses with: a floor, not a promise that Expat

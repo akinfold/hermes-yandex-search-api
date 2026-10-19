@@ -112,8 +112,9 @@ default).
   recent Expat; before the v2026.9.24 installer, `uv python install 3.11` makes
   it pick uv's Python over the system one.
 - The plugin parses Yandex's XML with the standard library. It refuses, saying
-  why, a response that declares a DTD, is not UTF-8, or is larger than 2 MiB
-  (100 results take about 0.2 MiB).
+  why, a response that declares a DTD or is not UTF-8, and an XML document
+  larger than 2 MiB; the largest live 100-result report measured came to about
+  445 KB.
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 
