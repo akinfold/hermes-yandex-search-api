@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import base64
 import codecs
 import socket
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 from hermes_yandex_search import client
 from hermes_yandex_search.client import (
+    MAX_RAW_DATA_CHARS,
     MAX_XML_BYTES,
     MIN_EXPAT_VERSION,
+    WebResult,
+    YandexSearchClient,
     YandexSearchError,
     _parse_web_xml,
     _parse_xml,
@@ -39,6 +44,13 @@ def report(dtd: str = "", title: str = "Title", url_attr: str = "") -> bytes:
         f"<doc{doc_attrs}>{url}<title>{title}</title></doc>"
         "</group></grouping></results></response></yandexsearch>"
     ).encode()
+
+
+def web_search_returning(raw_data: str) -> list[WebResult]:
+    """Run a web search against a fake API that answers with *raw_data*."""
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, json={"rawData": raw_data}))
+    with httpx.Client(transport=transport) as http:
+        return YandexSearchClient("k", "f", client=http).web_search("q")
 
 
 @pytest.fixture
@@ -158,6 +170,35 @@ def test_refuses_a_document_over_the_size_limit() -> None:
         f"Refusing to parse the Yandex XML response: it is {MAX_XML_BYTES + 1} bytes, "
         f"more than the limit of {MAX_XML_BYTES}"
     )
+
+
+def test_refuses_base64_too_long_for_the_size_limit_before_decoding_it() -> None:
+    title = "A" * (MAX_XML_BYTES - len(report(title="")))
+    largest = base64.b64encode(report(title=title)).decode("ascii")
+    assert len(largest) == MAX_RAW_DATA_CHARS
+    (result,) = web_search_returning(largest)
+    assert result.title == title
+
+    # The second payload is not Base64 at all: its length is refused before the
+    # decoder gets to say so.
+    too_long = base64.b64encode(report(title=title + "AA")).decode("ascii")
+    for raw_data in (too_long, "!" * (MAX_RAW_DATA_CHARS + 1)):
+        with pytest.raises(YandexSearchError) as exc_info:
+            web_search_returning(raw_data)
+        assert str(exc_info.value) == (
+            f"Refusing to parse the Yandex XML response: its Base64 is {len(raw_data)} "
+            f"characters, more than the limit of {MAX_RAW_DATA_CHARS}"
+        )
+
+
+@pytest.mark.parametrize("extra", [1, 2, 3])
+def test_a_document_over_the_limit_is_refused_whatever_its_base64_padding(extra: int) -> None:
+    # Base64 pads its last group, so a document a byte or two over the limit can
+    # still fit in MAX_RAW_DATA_CHARS; the decoded size check refuses it then.
+    title = "A" * (MAX_XML_BYTES + extra - len(report(title="")))
+    raw_data = base64.b64encode(report(title=title)).decode("ascii")
+    with pytest.raises(YandexSearchError, match=r"^Refusing to parse the Yandex XML response: "):
+        web_search_returning(raw_data)
 
 
 #: The largest live 100-result report measured, in October 2026: about 445 KB.

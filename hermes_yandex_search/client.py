@@ -43,6 +43,12 @@ import httpx
 #: short.
 MAX_XML_BYTES = 2 * 1024 * 1024
 
+#: The longest Base64 ``rawData`` that can decode to MAX_XML_BYTES or fewer:
+#: Base64 turns every 3 bytes into 4 characters and pads the last group. It is
+#: decoded with ``validate=True``, which refuses whitespace and anything else
+#: outside the alphabet, so nothing longer can decode to a document under the cap.
+MAX_RAW_DATA_CHARS = 4 * -(-MAX_XML_BYTES // 3)
+
 #: The oldest Expat this plugin parses with: a floor, not a promise that Expat
 #: has no bugs. The guards _parse_xml relies on work on any Expat: refusing the
 #: DTD rules out every entity and every external fetch, reading only UTF-8 keeps
@@ -283,6 +289,13 @@ class YandexSearchClient:
         raw_data = data.get("rawData") if isinstance(data, dict) else None
         if not raw_data:
             raise YandexSearchError("Yandex response did not contain 'rawData'")
+        # Refuse a payload that cannot decode to a document under the cap before
+        # paying to decode it; _check_document still checks the decoded size.
+        if len(raw_data) > MAX_RAW_DATA_CHARS:
+            raise YandexSearchError(
+                f"Refusing to parse the Yandex XML response: its Base64 is {len(raw_data)} "
+                f"characters, more than the limit of {MAX_RAW_DATA_CHARS}"
+            )
         try:
             return base64.b64decode(raw_data, validate=True)
         except (binascii.Error, ValueError) as exc:
