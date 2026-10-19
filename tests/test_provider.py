@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from hermes_yandex_search import client as client_module
 from hermes_yandex_search import config
 from hermes_yandex_search.client import YandexSearchClient, YandexSearchError
 from hermes_yandex_search.provider import YandexWebSearchProvider
+
+from .conftest import SAMPLE_WEB_XML, encode_raw_data
 
 
 def _client_with(handler: httpx.MockTransport) -> YandexSearchClient:
@@ -47,6 +50,32 @@ def test_search_returns_success_envelope(
     assert web[0]["url"] == "https://example.com/a"
     assert web[0]["position"] == 1
     assert set(web[0]) == {"title", "url", "description", "position"}
+
+
+@pytest.mark.parametrize(
+    ("dtd", "expat_version", "error"),
+    [
+        ("<!DOCTYPE r [<!ENTITY e 'x'>]>", None, "it declares a DTD"),
+        ("", (2, 5, 0), "this Python uses Expat 2.5.0, older than 2.6.0"),
+    ],
+    ids=["dtd", "old-expat"],
+)
+def test_search_reports_xml_it_will_not_parse(
+    monkeypatch: pytest.MonkeyPatch,
+    yandex_env: None,
+    dtd: str,
+    expat_version: tuple[int, int, int] | None,
+    error: str,
+) -> None:
+    raw = encode_raw_data(SAMPLE_WEB_XML.replace("?>", "?>" + dtd, 1))
+    client = _client_with(httpx.MockTransport(lambda r: httpx.Response(200, json={"rawData": raw})))
+    monkeypatch.setattr(config, "build_client", lambda: client)
+    if expat_version:
+        monkeypatch.setattr(client_module.expat, "version_info", expat_version)
+
+    result = YandexWebSearchProvider().search("q")
+    assert result["success"] is False
+    assert error in result["error"]
 
 
 def test_search_maps_api_error(monkeypatch: pytest.MonkeyPatch, yandex_env: None) -> None:

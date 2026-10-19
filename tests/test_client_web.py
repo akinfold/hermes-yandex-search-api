@@ -47,24 +47,8 @@ def test_parse_web_xml_falls_back_to_headline() -> None:
 
 
 def test_parse_web_xml_raises_on_invalid_xml() -> None:
-    with pytest.raises(YandexSearchError):
+    with pytest.raises(YandexSearchError, match="Could not parse Yandex XML response: unclosed"):
         _parse_web_xml(b"<not-valid")
-
-
-def test_parse_web_xml_rejects_entity_expansion() -> None:
-    # Billion-laughs style payload: defusedxml must refuse to expand entities.
-    payload = (
-        '<?xml version="1.0"?>'
-        "<!DOCTYPE lolz ["
-        '<!ENTITY lol "lol">'
-        '<!ENTITY lol2 "&lol;&lol;&lol;&lol;">'
-        "]>"
-        "<yandexsearch><response><results><grouping><group>"
-        "<doc><url>http://x/</url><title>&lol2;</title></doc>"
-        "</group></grouping></results></response></yandexsearch>"
-    )
-    with pytest.raises(YandexSearchError):
-        _parse_web_xml(payload.encode("utf-8"))
 
 
 def test_web_search_sends_expected_request(web_raw_data: str) -> None:

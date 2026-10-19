@@ -1,7 +1,8 @@
 """Yandex Search API v2 client.
 
-A small, dependency-light HTTP client for the Yandex Search API. It knows
-nothing about Hermes and can be unit-tested in isolation.
+A small HTTP client for the Yandex Search API that needs nothing beyond
+``httpx`` and the standard library. It knows nothing about Hermes and can be
+unit-tested in isolation.
 
 Two search modes are implemented:
 
@@ -24,11 +25,21 @@ import base64
 import binascii
 from dataclasses import dataclass, field
 from typing import Any
-from xml.etree import ElementTree as ET  # nosec B405 - parsing uses defusedxml
+
+# ElementTree only holds the parsed tree: _parse_xml drives Expat itself, checks
+# the Expat version first, and refuses any DTD.
+from xml.etree import ElementTree as ET  # nosec B405
+from xml.parsers import expat
 
 import httpx
-from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import fromstring as _safe_fromstring
+
+#: The oldest Expat _parse_xml parses with. Refusing any DTD rules out the
+#: entity attacks on every Expat; what is left is "large tokens"
+#: (CVE-2023-52425), a quadratic runtime that needs no DTD and that CPython
+#: exposes by feeding Expat 1 MiB at a time. Expat 2.6.0 fixed it. Python can be
+#: built against a system libexpat older than the copy it bundles, so the
+#: version is checked at run time.
+MIN_EXPAT_VERSION = (2, 6, 0)
 
 DEFAULT_BASE_URL = "https://searchapi.api.cloud.yandex.net"
 DEFAULT_SEARCH_TYPE = "SEARCH_TYPE_RU"
@@ -341,19 +352,64 @@ def _raise_for_xml_error(root: ET.Element) -> None:
         raise YandexSearchError(f"Yandex search error: {error.text.strip()}")
 
 
+def _version_text(version: tuple[int, ...]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+def _check_expat_version() -> None:
+    """Refuse to parse anything with an Expat older than :data:`MIN_EXPAT_VERSION`."""
+    found = tuple(expat.version_info)
+    if found < MIN_EXPAT_VERSION:
+        raise YandexSearchError(
+            "Refusing to parse the Yandex XML response: this Python uses Expat "
+            f"{_version_text(found)}, older than {_version_text(MIN_EXPAT_VERSION)}, the "
+            "oldest safe for untrusted XML. Use a Python built with a newer Expat."
+        )
+
+
+def _clark(name: str) -> str:
+    """Spell a name as ElementTree does: Expat's ``uri}local`` becomes ``{uri}local``."""
+    return "{" + name if "}" in name else name
+
+
+def _refuse_dtd(*_args: object) -> None:
+    """Expat calls this at ``<!DOCTYPE``, before it reads any of the DTD."""
+    raise YandexSearchError("Rejected unsafe Yandex XML response: it declares a DTD")
+
+
+def _parse_xml(raw: bytes) -> ET.Element:
+    """Parse an untrusted XML document into the tree ``ElementTree.fromstring`` would build.
+
+    Entities can only be declared in a DTD, so refusing the DTD at ``<!DOCTYPE``
+    leaves no entity to expand (billion laughs, quadratic blowup) and no external
+    entity or DTD to resolve; Expat itself never opens files or connections.
+    ElementTree's own parser keeps parsing after a handler raises, so Expat is
+    driven here directly: a handler that raises stops it on the spot.
+    """
+    _check_expat_version()
+    builder = ET.TreeBuilder()
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.StartDoctypeDeclHandler = _refuse_dtd
+    parser.StartElementHandler = lambda tag, attrib: builder.start(
+        _clark(tag), {_clark(name): value for name, value in attrib.items()}
+    )
+    parser.EndElementHandler = lambda tag: builder.end(_clark(tag))
+    parser.CharacterDataHandler = builder.data
+    try:
+        parser.Parse(raw, True)
+    except expat.ExpatError as exc:
+        raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
+    return builder.close()
+
+
 def _parse_web_xml(raw: bytes) -> list[WebResult]:
     """Parse the ``<yandexsearch>`` XML document into :class:`WebResult` items.
 
-    Uses :mod:`defusedxml` so a malicious response cannot mount an entity-
-    expansion (billion-laughs) or external-entity (XXE) attack.
+    The document is untrusted: :func:`_parse_xml` refuses any DTD, so a malicious
+    response cannot mount an entity-expansion (billion laughs) or external-entity
+    (XXE) attack, and refuses to parse at all on an Expat too old to trust.
     """
-    try:
-        root = _safe_fromstring(raw)
-    except DefusedXmlException as exc:
-        raise YandexSearchError(f"Rejected unsafe Yandex XML response: {exc}") from exc
-    except ET.ParseError as exc:
-        raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
-
+    root = _parse_xml(raw)
     _strip_namespaces(root)
     _raise_for_xml_error(root)
 
