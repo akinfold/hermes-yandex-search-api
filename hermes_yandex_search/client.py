@@ -49,16 +49,20 @@ MAX_XML_BYTES = 2 * 1024 * 1024
 #: outside the alphabet, so nothing longer can decode to a document under the cap.
 MAX_RAW_DATA_CHARS = 4 * -(-MAX_XML_BYTES // 3)
 
-#: The oldest Expat this plugin parses with: a floor, not a promise that Expat
-#: has no bugs. The guards _parse_xml relies on work on any Expat: refusing the
-#: DTD rules out every entity and every external fetch, reading only UTF-8 keeps
-#: Expat's UTF-16 decoder out of reach (it let malformed surrogates through
-#: before 2.8.5, CVE-2026-93990), and MAX_XML_BYTES bounds time and memory.
-#: 2.4.5 stopped Expat passing malformed UTF-8 and namespace separators on to
-#: the application (CVE-2022-25235, CVE-2022-25236). Python can use the system
-#: libexpat instead of its own copy, so the version is checked at run time.
+#: The oldest Expat this plugin parses with: a safety margin on top of the
+#: guards in _parse_xml, not a promise that Expat has no bugs. The guards work
+#: on any Expat: refusing the DTD rules out every entity and every external
+#: fetch, reading only UTF-8 keeps Expat's UTF-16 decoder out of reach (it let
+#: malformed surrogates through before 2.8.5, CVE-2026-93990), and
+#: MAX_XML_BYTES bounds time and memory. They already neutralise what 2.4.5
+#: fixed, Expat passing malformed UTF-8 and namespace separators on to the
+#: application (CVE-2022-25235, CVE-2022-25236): malformed UTF-8 never reaches
+#: Expat, and a separator in a namespace URI only bends a name, which this
+#: module handles as plain Python text. Python can use the system libexpat
+#: instead of its own copy, so the version is checked at run time.
 #: Distributions backport fixes without raising the version, so the floor stays
-#: below what they ship (2.5.0 on Debian 12 and RHEL 9, 2.4.7 on Ubuntu 22.04).
+#: below what current ones ship (2.5.0 on Debian 12 and RHEL 9, 2.4.7 on
+#: Ubuntu 22.04).
 MIN_EXPAT_VERSION = (2, 4, 5)
 
 #: Where the README explains which Expat the plugin needs.
@@ -401,8 +405,8 @@ def _is_utf8(raw: bytes) -> bool:
     """Whether *raw* is UTF-8 without a NUL byte, the only form Expat gets to read.
 
     Even when told the encoding, Expat switches to UTF-16 at a UTF-16 byte order
-    mark, which is never UTF-8, or at a NUL byte next to the first ``<``, which is
-    UTF-8 but never XML.
+    mark, which is never UTF-8, or when either of the first two bytes is NUL; NUL
+    is refused anywhere.
     """
     if b"\x00" in raw:
         return False
