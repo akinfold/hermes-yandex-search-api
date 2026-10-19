@@ -1,10 +1,11 @@
-"""Configuration helpers: build a :class:`YandexSearchClient` from the host env.
+"""Configuration helpers: build a :class:`YandexSearchClient` from Hermes' settings.
 
-Credentials and options are read through :func:`get_provider_env`, which inside
-Hermes resolves values from ``os.environ`` first and then ``~/.hermes/.env`` —
-so keys configured through Hermes are visible even in subprocess/gateway runs.
+Credentials and options are read through Hermes' :func:`get_provider_env`, which
+resolves the active profile's settings and secrets: its environment variables
+first, then its ``.env`` file. The plugin opens no file itself. Outside Hermes,
+the shim in :mod:`._compat` reads the process environment only.
 
-Environment variables:
+Settings:
 
 * ``YANDEX_API_KEY``     (required) - Yandex Cloud API key.
 * ``YANDEX_FOLDER_ID``   (required) - Yandex Cloud folder ("catalog") id.
@@ -34,7 +35,7 @@ def credentials_present() -> bool:
 
 
 def build_client() -> YandexSearchClient:
-    """Construct a :class:`YandexSearchClient` from environment configuration.
+    """Construct a :class:`YandexSearchClient` from the settings get_provider_env resolves.
 
     Raises:
         ValueError: When required credentials are missing or a value is invalid.

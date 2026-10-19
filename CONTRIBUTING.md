@@ -18,7 +18,7 @@ hermes_yandex_search/
   client.py       # Hermes-independent Yandex Search API client (HTTP + parsing)
   provider.py     # `yandex` web-search backend provider
   generative.py   # `yandex_generative_search` standalone tool
-  config.py       # builds a client from environment variables
+  config.py       # builds a client from the settings Hermes resolves
   _compat.py      # real-vs-shim Hermes base class + env helper
   __init__.py     # register(ctx) — the plugin entry point
 tests/            # unit tests (no network, httpx.MockTransport)

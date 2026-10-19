@@ -309,9 +309,11 @@ v2026.9.24, the last release whose installer builds the older layout. See
 
 ## Configuring the token in Hermes
 
-The plugin reads its credentials from the environment, resolved the way every
-Hermes web backend resolves them: `os.environ` first, then `~/.hermes/.env`.
-The simplest, persistent option is to put them in `~/.hermes/.env`:
+The plugin opens no file itself. It reads its credentials through Hermes'
+`get_provider_env`, the helper Hermes' own web backends use, which resolves the
+active profile's settings and secrets: its environment variables first, then
+its `.env` file (`~/.hermes/.env` for the default profile). The simplest,
+persistent option is to put them in `~/.hermes/.env`:
 
 ```dotenv
 YANDEX_API_KEY=your-api-key
@@ -440,7 +442,7 @@ integration:
 - `hermes_yandex_search/client.py` — the `YandexSearchClient` (pure HTTP + parsing, no Hermes imports).
 - `hermes_yandex_search/provider.py` — the `yandex` web-search backend provider.
 - `hermes_yandex_search/generative.py` — the `yandex_generative_search` tool.
-- `hermes_yandex_search/config.py` — builds a client from environment variables.
+- `hermes_yandex_search/config.py` — builds a client from the settings Hermes resolves.
 - `hermes_yandex_search/__init__.py` — `register(ctx)`, the plugin entry point.
 
 ## Running the live E2E tests
