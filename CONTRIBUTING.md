@@ -30,6 +30,12 @@ Keep `client.py` free of any Hermes imports so it stays unit-testable in
 isolation. Anything that talks to the host belongs in `provider.py` /
 `generative.py` / `_compat.py`.
 
+The plugin needs nothing beyond `httpx` and the standard library: the
+recommended installs copy only the plugin directory, so nothing else would be
+installed. Keep it that way. Parse XML only through `_parse_xml` in
+`client.py`, which refuses any DTD and refuses to parse at all on an Expat older
+than `MIN_EXPAT_VERSION`.
+
 ## Development setup
 
 ```bash

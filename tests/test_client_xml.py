@@ -189,6 +189,12 @@ def test_parses_on_a_supported_expat(
     assert len(_parse_web_xml(SAMPLE_WEB_XML.encode("utf-8"))) == 2
 
 
+def test_readme_names_the_same_minimum() -> None:
+    minimum = ".".join(map(str, MIN_EXPAT_VERSION))
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert f"Expat {minimum} or newer" in readme
+
+
 def test_this_python_has_a_supported_expat() -> None:
     # The suite parses for real; on an older Expat every parsing test above
     # would fail for that reason alone, so say it plainly here.

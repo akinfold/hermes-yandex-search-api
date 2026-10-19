@@ -22,7 +22,6 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.24",
-    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]

@@ -98,9 +98,15 @@ default).
   release against Hermes v2026.9.24, the latest Hermes release and Hermes
   `main`, each installed by its official installer.
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
-- The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
-  installs both. Options A and B install neither, and a Hermes set up by its
-  official installer normally has both — see the note under Option B.
+- The Python package `httpx >= 0.24`, which Hermes itself depends on. Option C
+  (PyPI) installs it; options A and B use the copy Hermes already has.
+- Expat 2.6.0 or newer in the Python that runs Hermes. The plugin parses
+  Yandex's XML with the standard library, refuses any document that declares a
+  DTD, and refuses to parse at all — saying which Expat it found — on an older
+  Expat. Python 3.11.9, 3.12.3 and every 3.13 and 3.14 release bundle a newer
+  one; an older patch release, or a Python built against an older system
+  libexpat, falls short. `python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"`
+  shows which one a Python uses.
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 
@@ -171,30 +177,18 @@ asks for credentials on this path — add them to `~/.hermes/.env` as in the
 [Quick start](#quick-start), and select the backend the same way.
 
 > **Options A and B install no dependencies.** Both copy the plugin's sources
-> only, and the plugin directory declares nothing for Hermes to install. A Hermes
-> set up by its official installer normally has both packages the plugin needs:
-> `httpx` is a Hermes dependency, and `defusedxml` comes with
-> `youtube-transcript-api`, from Hermes' `youtube` extra, which is part of its
-> `[all]` set. The install check confirms both on every pull request, weekly,
-> and before every release, on Hermes v2026.9.24, the latest Hermes release and
-> `main`. Hermes does not support adding packages to that environment by hand,
-> so there is no command for it here.
->
-> Hermes itself declares `defusedxml` directly only in its `wecom` extra, so an
-> environment built without the `youtube` and `wecom` extras can lack it, and the
-> plugin then fails to load with `ModuleNotFoundError: No module named
-> 'defusedxml'`. If you manage that environment yourself, install the plugin
-> there by Option C instead, which brings both packages. An install in the older
-> layout (see Option C) can lack it too, when its installer could not install
-> the full set and fell back to its "core only (no extras)" tier: the installer
-> then ends by saying it installed via a fallback tier, and what to re-run.
+> only, and the plugin directory declares nothing for Hermes to install. It needs
+> nothing more: besides the standard library the plugin uses only `httpx`, one
+> of Hermes' own core dependencies. The install check confirms that Hermes has
+> it on every pull request, weekly, and before every release, on Hermes
+> v2026.9.24, the latest Hermes release and `main`.
 
 ### Option C — from PyPI
 
 For a Hermes whose Python environment you manage yourself — your own virtualenv,
 a Nix build: install `hermes-yandex-search-api` into that environment, then enable
 the plugin. Hermes finds it through the `hermes_agent.plugins` entry point, and the
-package brings `httpx` and `defusedxml` with it.
+package brings `httpx` with it.
 
 ```bash
 hermes plugins enable yandex
