@@ -5,11 +5,12 @@ name: E2E (live)
 # ("Running the live E2E tests").
 #
 # The plugin runs inside a real Hermes, installed by its official installer (see
-# .github/actions/setup-hermes): the latest release by default, or main, which
-# is what the installer gives today. The tests run in Hermes' own Python, with
-# this checkout on PYTHONPATH and pytest after Hermes' own packages: nothing is
-# installed into Hermes' environment, which Hermes builds itself and does not
-# support changing by hand.
+# .github/actions/setup-hermes): the latest release by default, where
+# `hermes update` and the one-line installer put a user, or the tip of main,
+# where changes land before any release has them. The tests run in Hermes' own
+# Python, with this checkout on PYTHONPATH and pytest after Hermes' own
+# packages: nothing is installed into Hermes' environment, which Hermes builds
+# itself and does not support changing by hand.
 # `none` runs the plugin on its own, on the stand-ins in _compat.py.
 on:
   workflow_dispatch:

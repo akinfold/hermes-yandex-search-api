@@ -80,19 +80,20 @@ release whose installer builds the older layout the PyPI command is for;
 `release`, the latest Hermes release; and `main`. It runs on every pull request,
 and the release workflow runs it on the artifacts it has just built: the GitHub
 Release and the PyPI upload wait for it. It also runs on its own every Monday and
-on demand from the Actions tab, because Hermes `main` changes while this
-repository does not.
+on demand from the Actions tab, because Hermes changes while this repository does
+not: `main` every day, its releases every few days.
 
 The check installs into the real `~/.hermes`, so run it yourself only in a
 disposable container or VM, never where you use Hermes: for example an
 `ubuntu:24.04` container with a non-root user, Hermes installed there by the
 installer of the channel you want — saved to a file and run with
 `--non-interactive --skip-setup --skip-browser --skip-computer-use`, plus
-`--branch` and the tag for a release (`v2026.9.24` for `legacy`) — and the
-commit under test pushed, since Hermes clones it from GitHub. The v2026.9.24
-installer also needs a C++ compiler (`build-essential` on Ubuntu), which GitHub
-runners already have. The docstring of `tests/install/test_install.py` lists the
-variables to set. Remove the container afterwards.
+`--branch` and the tag for a release (`v2026.9.24` for `legacy`) or
+`--channel main` for `main` — and the commit under test pushed, since Hermes
+clones it from GitHub. The v2026.9.24 installer also needs a C++ compiler
+(`build-essential` on Ubuntu), which GitHub runners already have. The docstring
+of `tests/install/test_install.py` lists the variables to set. Remove the
+container afterwards.
 
 ## Commit & PR conventions
 
