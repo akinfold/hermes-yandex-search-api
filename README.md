@@ -98,9 +98,38 @@ default).
   release against Hermes v2026.9.24, the latest Hermes release and Hermes
   `main`, each installed by its official installer.
 - Python `>= 3.11`; the tests run on **3.11–3.14**.
-- The Python packages `httpx >= 0.24` and `defusedxml >= 0.7`. Option C (PyPI)
-  installs both. Options A and B install neither, and a Hermes set up by its
-  official installer normally has both — see the note under Option B.
+- The Python package `httpx >= 0.24`, which Hermes itself depends on. Option C
+  (PyPI) installs it; options A and B use the copy Hermes already has.
+- Expat 2.4.5 or newer in the Python that runs Hermes. On an older Expat the
+  plugin refuses to parse at all, naming the version it found.
+
+  Hermes' current installer brings its own Python, with a recent Expat. To
+  check it anyway, use the interpreter `<environment>/bin/python`, where
+  `<environment>` is the `packages.venv.environment` value in
+  `~/.hermes/installs/<id>/facts.json`. A Hermes in the older layout (see
+  Option C below) runs on the Python its installer found:
+
+  ```bash
+  ~/.hermes/hermes-agent/venv/bin/python -c "import pyexpat; print(pyexpat.EXPAT_VERSION)"
+  ```
+
+  Every CPython release from 3.11.0 bundles a newer Expat. A distribution's
+  own Python uses the system libexpat instead, and current distributions ship
+  one new enough: 2.5.0 on Debian 12 (where the installer of Hermes v2026.9.24
+  picks the system `python3.11`) and RHEL 9, 2.4.7 on Ubuntu 22.04. Older
+  releases ship an older one: RHEL 8 before its 2.5.0 update, 2.2.10 on
+  Debian 11, 2.2.9 on Ubuntu 20.04. These numbers come from the distributions'
+  package versions, not from CI. Distributions backport security fixes without
+  raising the version, and the plugin goes by the number alone.
+
+  On an older Expat, `hermes update` moves Hermes onto the current installer's
+  own Python (Option C users: switch to Option A first, see below). To stay on
+  the older layout, run `~/.hermes/bin/uv python install 3.11` and re-run the
+  v2026.9.24 installer, which then builds its venv on uv's Python.
+- The plugin parses Yandex's XML with the standard library. It refuses, saying
+  why, a response that declares a DTD or is not UTF-8, and an XML document
+  larger than 2 MiB; the largest live 100-result report measured came to about
+  445 KB.
 - A Yandex Cloud account with the Search API enabled, an **API key**, and the
   **folder id** that owns it.
 
@@ -171,30 +200,18 @@ asks for credentials on this path — add them to `~/.hermes/.env` as in the
 [Quick start](#quick-start), and select the backend the same way.
 
 > **Options A and B install no dependencies.** Both copy the plugin's sources
-> only, and the plugin directory declares nothing for Hermes to install. A Hermes
-> set up by its official installer normally has both packages the plugin needs:
-> `httpx` is a Hermes dependency, and `defusedxml` comes with
-> `youtube-transcript-api`, from Hermes' `youtube` extra, which is part of its
-> `[all]` set. The install check confirms both on every pull request, weekly,
-> and before every release, on Hermes v2026.9.24, the latest Hermes release and
-> `main`. Hermes does not support adding packages to that environment by hand,
-> so there is no command for it here.
->
-> Hermes itself declares `defusedxml` directly only in its `wecom` extra, so an
-> environment built without the `youtube` and `wecom` extras can lack it, and the
-> plugin then fails to load with `ModuleNotFoundError: No module named
-> 'defusedxml'`. If you manage that environment yourself, install the plugin
-> there by Option C instead, which brings both packages. An install in the older
-> layout (see Option C) can lack it too, when its installer could not install
-> the full set and fell back to its "core only (no extras)" tier: the installer
-> then ends by saying it installed via a fallback tier, and what to re-run.
+> only, and the plugin directory declares nothing for Hermes to install. It needs
+> nothing more: besides the standard library the plugin uses only `httpx`, one
+> of Hermes' own core dependencies. The install check confirms that Hermes has
+> it on every pull request, weekly, and before every release, on Hermes
+> v2026.9.24, the latest Hermes release and `main`.
 
 ### Option C — from PyPI
 
 For a Hermes whose Python environment you manage yourself — your own virtualenv,
 a Nix build: install `hermes-yandex-search-api` into that environment, then enable
 the plugin. Hermes finds it through the `hermes_agent.plugins` entry point, and the
-package brings `httpx` and `defusedxml` with it.
+package brings `httpx` with it.
 
 ```bash
 hermes plugins enable yandex
@@ -292,9 +309,11 @@ v2026.9.24, the last release whose installer builds the older layout. See
 
 ## Configuring the token in Hermes
 
-The plugin reads its credentials from the environment, resolved the way every
-Hermes web backend resolves them: `os.environ` first, then `~/.hermes/.env`.
-The simplest, persistent option is to put them in `~/.hermes/.env`:
+The plugin opens no file itself. It reads its credentials through Hermes'
+`get_provider_env`, the helper Hermes' own web backends use, which resolves the
+active profile's settings and secrets: its environment variables first, then
+its `.env` file (`~/.hermes/.env` for the default profile). The simplest,
+persistent option is to put them in `~/.hermes/.env`:
 
 ```dotenv
 YANDEX_API_KEY=your-api-key
@@ -423,7 +442,7 @@ integration:
 - `hermes_yandex_search/client.py` — the `YandexSearchClient` (pure HTTP + parsing, no Hermes imports).
 - `hermes_yandex_search/provider.py` — the `yandex` web-search backend provider.
 - `hermes_yandex_search/generative.py` — the `yandex_generative_search` tool.
-- `hermes_yandex_search/config.py` — builds a client from environment variables.
+- `hermes_yandex_search/config.py` — builds a client from the settings Hermes resolves.
 - `hermes_yandex_search/__init__.py` — `register(ctx)`, the plugin entry point.
 
 ## Running the live E2E tests

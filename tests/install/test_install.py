@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from hermes_yandex_search.client import MIN_EXPAT_VERSION
 
 from .hermes_env import hermes_python, is_pm_install
 
@@ -80,8 +81,8 @@ REQUIRED_ENV = ("YANDEX_API_KEY", "YANDEX_FOLDER_ID")
 DEFAULT_TOOLS = {"yandex_generative_search"}
 
 #: What the plugin imports beyond the standard library. Options A and B install
-#: none of it; README.md says a Hermes set up by its installer normally has both.
-DEPENDENCIES = ("httpx", "defusedxml")
+#: none of it; README.md says Hermes itself depends on it.
+DEPENDENCIES = ("httpx",)
 
 # The commands README.md gives. test_readme_gives_the_commands_under_test keeps
 # the two in step, so the tests below cannot drift into checking something the
@@ -327,8 +328,17 @@ def _assert_pinned(home: Home, commit: str) -> None:
 
 
 def _assert_hermes_has_the_dependencies(home: Home) -> None:
-    """README.md: Options A and B install no dependencies, and Hermes needs none."""
-    home.run(f"'{hermes_python(home.hermes_home)}' -c 'import {', '.join(DEPENDENCIES)}'")
+    """README.md: Options A and B install no dependencies, and Hermes needs none.
+
+    README.md also names the oldest Expat the plugin parses with, so check that
+    Hermes' Python is not older: on such a Python every web search would fail.
+    """
+    python = hermes_python(home.hermes_home)
+    home.run(f"'{python}' -c 'import {', '.join(DEPENDENCIES)}'")
+    home.run(
+        f"'{python}' -c 'import pyexpat; "
+        f"assert pyexpat.version_info >= {MIN_EXPAT_VERSION}, pyexpat.EXPAT_VERSION'"
+    )
 
 
 def _select_backend(home: Home) -> None:

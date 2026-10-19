@@ -18,7 +18,7 @@ hermes_yandex_search/
   client.py       # Hermes-independent Yandex Search API client (HTTP + parsing)
   provider.py     # `yandex` web-search backend provider
   generative.py   # `yandex_generative_search` standalone tool
-  config.py       # builds a client from environment variables
+  config.py       # builds a client from the settings Hermes resolves
   _compat.py      # real-vs-shim Hermes base class + env helper
   __init__.py     # register(ctx) — the plugin entry point
 tests/            # unit tests (no network, httpx.MockTransport)
@@ -29,6 +29,13 @@ tests/install/    # installs the build into a real Hermes by every README route,
 Keep `client.py` free of any Hermes imports so it stays unit-testable in
 isolation. Anything that talks to the host belongs in `provider.py` /
 `generative.py` / `_compat.py`.
+
+The plugin needs nothing beyond `httpx` and the standard library: the
+recommended installs copy only the plugin directory, so nothing else would be
+installed. Keep it that way. Parse XML only through `_parse_xml` in
+`client.py`. It refuses any DTD, any document that is not UTF-8 or is larger
+than `MAX_XML_BYTES`, and refuses to parse at all on an Expat older than
+`MIN_EXPAT_VERSION`.
 
 ## Development setup
 

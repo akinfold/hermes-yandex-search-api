@@ -1,7 +1,8 @@
 """Yandex Search API v2 client.
 
-A small, dependency-light HTTP client for the Yandex Search API. It knows
-nothing about Hermes and can be unit-tested in isolation.
+A small HTTP client for the Yandex Search API that needs nothing beyond
+``httpx`` and the standard library. It knows nothing about Hermes and can be
+unit-tested in isolation.
 
 Two search modes are implemented:
 
@@ -24,11 +25,48 @@ import base64
 import binascii
 from dataclasses import dataclass, field
 from typing import Any
-from xml.etree import ElementTree as ET  # nosec B405 - parsing uses defusedxml
+
+# ElementTree only holds the parsed tree: _parse_xml drives Expat itself, checks
+# the document and the Expat version first, and refuses any DTD.
+from xml.etree import ElementTree as ET  # nosec B405
+from xml.parsers import expat
 
 import httpx
-from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import fromstring as _safe_fromstring
+
+#: The largest XML document _parse_xml accepts, in bytes: about 4.7 times the
+#: largest live 100-result report measured (about 445 KB). pyexpat feeds Expat
+#: chunks of 1 MiB, so a document this size takes at most two XML_Parse calls,
+#: and on Expat before 2.6.0 a token spanning them is re-scanned at most once:
+#: CVE-2023-52425 is bounded, not unreachable. The cap also bounds the time and
+#: memory of any cost in Expat not known yet. pyexpat holds the GIL while it
+#: parses, so a slow parse blocks the whole Hermes process; the cap keeps that
+#: short.
+MAX_XML_BYTES = 2 * 1024 * 1024
+
+#: The longest Base64 ``rawData`` that can decode to MAX_XML_BYTES or fewer:
+#: Base64 turns every 3 bytes into 4 characters and pads the last group. It is
+#: decoded with ``validate=True``, which refuses whitespace and anything else
+#: outside the alphabet, so nothing longer can decode to a document under the cap.
+MAX_RAW_DATA_CHARS = 4 * -(-MAX_XML_BYTES // 3)
+
+#: The oldest Expat this plugin parses with: a safety margin on top of the
+#: guards in _parse_xml, not a promise that Expat has no bugs. The guards work
+#: on any Expat: refusing the DTD rules out every entity and every external
+#: fetch, reading only UTF-8 keeps Expat's UTF-16 decoder out of reach (it let
+#: malformed surrogates through before 2.8.5, CVE-2026-93990), and
+#: MAX_XML_BYTES bounds time and memory. They already neutralise what 2.4.5
+#: fixed, Expat passing malformed UTF-8 and namespace separators on to the
+#: application (CVE-2022-25235, CVE-2022-25236): malformed UTF-8 never reaches
+#: Expat, and a separator in a namespace URI only bends a name, which this
+#: module handles as plain Python text. Python can use the system libexpat
+#: instead of its own copy, so the version is checked at run time.
+#: Distributions backport fixes without raising the version, so the floor stays
+#: below what current ones ship (2.5.0 on Debian 12 and RHEL 9, 2.4.7 on
+#: Ubuntu 22.04).
+MIN_EXPAT_VERSION = (2, 4, 5)
+
+#: Where the README explains which Expat the plugin needs.
+REQUIREMENTS_URL = "https://github.com/akinfold/hermes-yandex-search-api#requirements"
 
 DEFAULT_BASE_URL = "https://searchapi.api.cloud.yandex.net"
 DEFAULT_SEARCH_TYPE = "SEARCH_TYPE_RU"
@@ -255,6 +293,13 @@ class YandexSearchClient:
         raw_data = data.get("rawData") if isinstance(data, dict) else None
         if not raw_data:
             raise YandexSearchError("Yandex response did not contain 'rawData'")
+        # Refuse a payload that cannot decode to a document under the cap before
+        # paying to decode it; _check_document still checks the decoded size.
+        if len(raw_data) > MAX_RAW_DATA_CHARS:
+            raise YandexSearchError(
+                f"Refusing to parse the Yandex XML response: its Base64 is {len(raw_data)} "
+                f"characters, more than the limit of {MAX_RAW_DATA_CHARS}"
+            )
         try:
             return base64.b64decode(raw_data, validate=True)
         except (binascii.Error, ValueError) as exc:
@@ -341,19 +386,97 @@ def _raise_for_xml_error(root: ET.Element) -> None:
         raise YandexSearchError(f"Yandex search error: {error.text.strip()}")
 
 
+def _version_text(version: tuple[int, ...]) -> str:
+    return ".".join(str(part) for part in version)
+
+
+def _check_expat_version() -> None:
+    """Refuse to parse anything with an Expat older than :data:`MIN_EXPAT_VERSION`."""
+    found = tuple(expat.version_info)
+    if found < MIN_EXPAT_VERSION:
+        raise YandexSearchError(
+            "Refusing to parse the Yandex XML response: this Python uses Expat "
+            f"{_version_text(found)}, older than {_version_text(MIN_EXPAT_VERSION)}, the "
+            f"oldest this plugin parses with. See {REQUIREMENTS_URL}"
+        )
+
+
+def _is_utf8(raw: bytes) -> bool:
+    """Whether *raw* is UTF-8 without a NUL byte, the only form Expat gets to read.
+
+    Even when told the encoding, Expat switches to UTF-16 at a UTF-16 byte order
+    mark, which is never UTF-8, or when either of the first two bytes is NUL; NUL
+    is refused anywhere.
+    """
+    if b"\x00" in raw:
+        return False
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _check_document(raw: bytes) -> None:
+    """Refuse a document larger than :data:`MAX_XML_BYTES` or not in UTF-8."""
+    if len(raw) > MAX_XML_BYTES:
+        raise YandexSearchError(
+            f"Refusing to parse the Yandex XML response: it is {len(raw)} bytes, "
+            f"more than the limit of {MAX_XML_BYTES}"
+        )
+    if not _is_utf8(raw):
+        raise YandexSearchError("Rejected Yandex XML response: it is not UTF-8")
+
+
+def _clark(name: str) -> str:
+    """Spell a name as ElementTree does: Expat's ``uri}local`` becomes ``{uri}local``."""
+    return "{" + name if "}" in name else name
+
+
+def _refuse_dtd(*_args: object) -> None:
+    """Expat calls this at ``<!DOCTYPE``, before it reads any of the DTD."""
+    raise YandexSearchError("Rejected unsafe Yandex XML response: it declares a DTD")
+
+
+def _parse_xml(raw: bytes) -> ET.Element:
+    """Parse an untrusted XML document into the tree ``ElementTree.fromstring`` would build.
+
+    Yandex sends UTF-8, so the document must be UTF-8, whatever encoding it
+    declares, and at most :data:`MAX_XML_BYTES` long. Entities can only be
+    declared in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to
+    expand (billion laughs, quadratic blowup) and no external entity or DTD to
+    resolve; Expat itself never opens files or connections. ElementTree's own
+    parser keeps parsing after a handler raises, so Expat is driven here
+    directly: a handler that raises stops it on the spot.
+    """
+    _check_expat_version()
+    _check_document(raw)
+    builder = ET.TreeBuilder()
+    # The encoding given here overrides the one the document declares, so Expat
+    # never calls back into Python's codecs for an encoding it lacks.
+    parser = expat.ParserCreate(encoding="utf-8", namespace_separator="}")
+    parser.StartDoctypeDeclHandler = _refuse_dtd
+    parser.StartElementHandler = lambda tag, attrib: builder.start(
+        _clark(tag), {_clark(name): value for name, value in attrib.items()}
+    )
+    parser.EndElementHandler = lambda tag: builder.end(_clark(tag))
+    parser.CharacterDataHandler = builder.data
+    try:
+        parser.Parse(raw, True)
+    except expat.ExpatError as exc:
+        raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
+    return builder.close()
+
+
 def _parse_web_xml(raw: bytes) -> list[WebResult]:
     """Parse the ``<yandexsearch>`` XML document into :class:`WebResult` items.
 
-    Uses :mod:`defusedxml` so a malicious response cannot mount an entity-
-    expansion (billion-laughs) or external-entity (XXE) attack.
+    The document is untrusted: :func:`_parse_xml` refuses any DTD, so a malicious
+    response cannot mount an entity-expansion (billion laughs) or external-entity
+    (XXE) attack. It also refuses a document that is too large or not UTF-8, and
+    refuses to parse at all on an Expat older than :data:`MIN_EXPAT_VERSION`.
     """
-    try:
-        root = _safe_fromstring(raw)
-    except DefusedXmlException as exc:
-        raise YandexSearchError(f"Rejected unsafe Yandex XML response: {exc}") from exc
-    except ET.ParseError as exc:
-        raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
-
+    root = _parse_xml(raw)
     _strip_namespaces(root)
     _raise_for_xml_error(root)
 
