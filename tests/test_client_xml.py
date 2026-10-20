@@ -5,15 +5,23 @@ from __future__ import annotations
 import base64
 import codecs
 import socket
-from collections.abc import Iterator
+import tracemalloc
+from collections.abc import Callable, Iterator
 from pathlib import Path
+
+# ElementTree parses only this suite's own literals, as the oracle _parse_xml's
+# tree is compared with and the yardstick its memory is measured against.
+from xml.etree import ElementTree as ET  # nosec B405
 
 import httpx
 import pytest
 from hermes_yandex_search import client
 from hermes_yandex_search.client import (
+    MAX_NAMESPACE_URI_CHARS,
     MAX_RAW_DATA_CHARS,
     MAX_XML_BYTES,
+    MAX_XML_DEPTH,
+    MAX_XML_NAMES,
     MIN_EXPAT_VERSION,
     WebResult,
     YandexSearchClient,
@@ -22,7 +30,12 @@ from hermes_yandex_search.client import (
     _parse_xml,
 )
 
-from .conftest import SAMPLE_WEB_XML
+from .conftest import (
+    DEFAULT_NAMESPACE_XML,
+    IN_DOCUMENT_ERROR_XML,
+    SAMPLE_WEB_XML,
+    URL_ATTRIBUTE_XML,
+)
 
 #: What _parse_xml says when it refuses a DTD. Expat's own limits (on entity
 #: amplification, for one) fail with other messages, so matching this proves the
@@ -30,6 +43,16 @@ from .conftest import SAMPLE_WEB_XML
 DTD_REFUSED = "Rejected unsafe Yandex XML response: it declares a DTD"
 
 NOT_UTF8 = "Rejected Yandex XML response: it is not UTF-8"
+
+LONG_NAMESPACE = (
+    "Rejected Yandex XML response: it declares a namespace URI longer than "
+    f"{MAX_NAMESPACE_URI_CHARS} characters"
+)
+
+TOO_DEEP = f"Rejected Yandex XML response: its elements are nested more than {MAX_XML_DEPTH} deep"
+
+#: A namespace URI exactly as long as _parse_xml allows.
+LONGEST_URI = "urn:" + "u" * (MAX_NAMESPACE_URI_CHARS - 4)
 
 FILE_TEXT = "the contents of a local file"
 
@@ -212,6 +235,163 @@ def test_the_size_limit_leaves_a_margin_over_real_reports() -> None:
     assert MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
+# -- names and namespaces cost what ElementTree's do --------------------------
+
+
+def test_elements_share_one_string_for_each_name() -> None:
+    # Each element and attribute in a namespace carries its URI in its name.
+    # ElementTree's own parser keeps one string per distinct name; one built
+    # afresh per element would hold a copy of the URI for every element.
+    elements = "<a:x a:k='1' plain='2'/>" * 3
+    root = _parse_xml(f"<r xmlns:a='{LONGEST_URI}'>{elements}</r>".encode())
+    assert [element.tag for element in root] == ["{" + LONGEST_URI + "}x"] * 3
+    assert len({id(element.tag) for element in root}) == 1
+    for name in ("{" + LONGEST_URI + "}k", "plain"):
+        keys = [next(key for key in element.attrib if key == name) for element in root]
+        assert len({id(key) for key in keys}) == 1
+
+
+def peak_memory(parse: Callable[[bytes], ET.Element], raw: bytes) -> int:
+    """The most memory *parse* holds at once while it parses *raw*, in bytes."""
+    tracemalloc.start()
+    try:
+        parse(raw)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_a_namespace_used_by_many_elements_costs_what_elementtree_pays() -> None:
+    # 20 000 short elements and attributes in a namespace as long as allowed.
+    # With a name built afresh for each of them the tree took 2.7 times the
+    # memory of ElementTree's; with shared names it takes the same.
+    elements = "<a:x a:k='1'/>" * 20_000
+    raw = f"<a:r xmlns:a='{LONGEST_URI}'>{elements}</a:r>".encode()
+    assert peak_memory(_parse_xml, raw) <= 1.25 * peak_memory(ET.fromstring, raw)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [f"xmlns='{LONGEST_URI}u'", f"xmlns:a='{LONGEST_URI}u'"],
+    ids=["default", "prefixed"],
+)
+def test_refuses_a_namespace_uri_over_the_length_limit(declaration: str) -> None:
+    # Declared on an element deep inside, and never used: refused all the same.
+    raw = report().replace(b"<title>", f"<title {declaration}>".encode(), 1)
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_web_xml(raw)
+    assert str(exc_info.value) == LONG_NAMESPACE
+
+
+def test_accepts_a_namespace_uri_at_the_length_limit() -> None:
+    root = _parse_xml(f"<a:r xmlns:a='{LONGEST_URI}' xmlns='{LONGEST_URI}'/>".encode())
+    assert root.tag == "{" + LONGEST_URI + "}r"
+
+
+NOT_ASCII_NAMESPACE = "Rejected Yandex XML response: it declares a namespace URI that is not ASCII"
+
+TOO_MANY_NAMES = (
+    f"Rejected Yandex XML response: it uses more than {MAX_XML_NAMES} distinct element "
+    "and attribute names"
+)
+
+
+@pytest.mark.parametrize("uri", ["urn:caf\u00e9", "urn:\U0001f600"], ids=["latin-1", "astral"])
+def test_refuses_a_namespace_uri_that_is_not_ascii(uri: str) -> None:
+    # A name holding a character outside the Basic Multilingual Plane is stored at
+    # four bytes per character, so the length limit alone would allow four times
+    # the memory.
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(f"<r xmlns:a='{uri}'><a:x/></r>".encode())
+    assert str(exc_info.value) == NOT_ASCII_NAMESPACE
+
+
+def distinct_names(count: int, uri: str = LONGEST_URI) -> bytes:
+    """A document with the root and *count* - 1 elements, each with a new name."""
+    elements = "".join(f"<a:n{index}/>" for index in range(count - 1))
+    return f"<a:r xmlns:a='{uri}'>{elements}</a:r>".encode()
+
+
+def test_accepts_distinct_names_up_to_the_limit() -> None:
+    assert len(_parse_xml(distinct_names(MAX_XML_NAMES))) == MAX_XML_NAMES - 1
+
+
+def test_refuses_more_distinct_names_than_the_limit() -> None:
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(distinct_names(MAX_XML_NAMES + 1))
+    assert str(exc_info.value) == TOO_MANY_NAMES
+
+
+def test_attribute_names_count_toward_the_limit() -> None:
+    attributes = " ".join(f"a:k{index}='1'" for index in range(MAX_XML_NAMES))
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(f"<a:r xmlns:a='{LONGEST_URI}' {attributes}/>".encode())
+    assert str(exc_info.value) == TOO_MANY_NAMES
+
+
+def test_a_new_name_for_every_element_costs_little() -> None:
+    # Sharing names helps only when they repeat: 2 MiB of elements that each
+    # have a new name in the longest namespace allowed would otherwise keep a
+    # copy of the URI per element, hundreds of MiB. The name limit stops it early.
+    count = (MAX_XML_BYTES - 200) // len("<a:n000000/>")
+    raw = distinct_names(count)
+    assert len(raw) <= MAX_XML_BYTES
+    tracemalloc.start()
+    try:
+        with pytest.raises(YandexSearchError):
+            _parse_xml(raw)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024
+
+
+# -- nesting depth ------------------------------------------------------------
+
+
+def nested_report(levels: int) -> bytes:
+    """report(), with *levels* elements nested one in another inside its ``doc``."""
+    return report().replace(b"<title>", b"<x>" * levels + b"</x>" * levels + b"<title>", 1)
+
+
+def test_refuses_elements_nested_deeper_than_the_limit() -> None:
+    # yandexsearch, response, results, grouping, group and doc hold the nested elements.
+    (result,) = _parse_web_xml(nested_report(MAX_XML_DEPTH - 6))
+    assert result.title == "Title"
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_web_xml(nested_report(MAX_XML_DEPTH - 5))
+    assert str(exc_info.value) == TOO_DEEP
+
+
+def test_elements_side_by_side_do_not_add_to_the_depth() -> None:
+    root = _parse_xml(b"<r>" + b"<x><y/></x>" * (MAX_XML_DEPTH + 1) + b"</r>")
+    assert len(root) == MAX_XML_DEPTH + 1
+
+
+def depth(element: ET.Element) -> int:
+    return 1 + max((depth(child) for child in element), default=0)
+
+
+def test_the_depth_limit_leaves_a_margin_over_real_reports() -> None:
+    # The sample follows a live report down to its deepest element, a highlighted
+    # word in a passage: yandexsearch, response, results, grouping, group, doc,
+    # passages, passage, hlword.
+    assert depth(_parse_xml(SAMPLE_WEB_XML.encode())) == 9
+    assert MAX_XML_DEPTH >= 3 * 9
+
+
+# -- text ---------------------------------------------------------------------
+
+
+def test_text_costs_about_what_it_takes_in_the_document() -> None:
+    # Unbuffered, Expat calls back once per line and per character reference,
+    # and the tree keeps every piece until its text is read: 100 000 short lines
+    # took 21 to 24 times their size, 2 MiB of them 42 MiB and a quarter second.
+    raw = ("<r>" + "ab\n" * 100_000 + "</r>").encode()
+    assert peak_memory(_parse_xml, raw) <= 4 * len(raw)
+    assert _parse_xml(raw).text == "ab\n" * 100_000
+
+
 # -- UTF-8 only ----------------------------------------------------------------
 
 #: A lone UTF-16 high surrogate followed by "A": Expat before 2.8.5 decodes the
@@ -266,12 +446,24 @@ def test_an_undeclared_entity_is_a_parse_error() -> None:
         _parse_web_xml(report(title="&xxe;"))
 
 
+#: Namespaced and plain names, a comment, a processing instruction, an
+#: escaped character and a CDATA section.
+MIXED_CONTENT = (
+    b"<?xml version='1.0' encoding='utf-8'?>"
+    b"<y:a xmlns:y='urn:y' xmlns='urn:d' y:id='1' plain='2'>"
+    b"<b>\xe2\x82\xac <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
+)
+
+#: A report whose every name has a prefix.
+PREFIXED_REPORT = (
+    b"<y:yandexsearch xmlns:y='urn:yandex'><y:response><y:results><y:grouping>"
+    b"<y:group><y:doc><y:url>https://ns.example/z</y:url><y:title>Z</y:title></y:doc>"
+    b"</y:group></y:grouping></y:results></y:response></y:yandexsearch>"
+)
+
+
 def test_builds_the_tree_elementtree_would() -> None:
-    root = _parse_xml(
-        b"<?xml version='1.0' encoding='utf-8'?>"
-        b"<y:a xmlns:y='urn:y' xmlns='urn:d' y:id='1' plain='2'>"
-        b"<b>\xe2\x82\xac <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
-    )
+    root = _parse_xml(MIXED_CONTENT)
     assert root.tag == "{urn:y}a"
     assert root.attrib == {"{urn:y}id": "1", "plain": "2"}
     (child,) = list(root)
@@ -281,13 +473,69 @@ def test_builds_the_tree_elementtree_would() -> None:
 
 
 def test_parses_a_report_with_prefixed_names() -> None:
-    xml = (
-        "<y:yandexsearch xmlns:y='urn:yandex'><y:response><y:results><y:grouping>"
-        "<y:group><y:doc><y:url>https://ns.example/z</y:url><y:title>Z</y:title></y:doc>"
-        "</y:group></y:grouping></y:results></y:response></y:yandexsearch>"
-    )
-    (result,) = _parse_web_xml(xml.encode("utf-8"))
+    (result,) = _parse_web_xml(PREFIXED_REPORT)
     assert (result.url, result.title) == ("https://ns.example/z", "Z")
+
+
+#: The default namespace undeclared on a child: Expat reports that URI as None.
+UNDECLARED_DEFAULT = b"<r xmlns='urn:d'><x xmlns=''><y/></x><z/></r>"
+
+#: Line breaks of every kind and character references, in runs of text longer
+#: than the buffer Expat fills before it calls back.
+LONG_TEXT = (
+    "<r>" + "ab\r\ncd\re&#10;&#x20AC;\u0436\n" * 2_000 + "<x/>" + "tail " * 5_000 + "</r>"
+).encode()
+
+
+def shape(element: ET.Element) -> tuple:
+    return (
+        element.tag,
+        list(element.attrib.items()),
+        element.text,
+        element.tail,
+        [shape(child) for child in element],
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        SAMPLE_WEB_XML.encode(),
+        URL_ATTRIBUTE_XML.encode(),
+        DEFAULT_NAMESPACE_XML.encode(),
+        IN_DOCUMENT_ERROR_XML.encode(),
+        report(),
+        report(title="&lt;b&gt; &amp; \u20ac"),
+        report(url_attr="https://x.example/?a=1&amp;b=2"),
+        codecs.BOM_UTF8 + report(),
+        MIXED_CONTENT,
+        PREFIXED_REPORT,
+        UNDECLARED_DEFAULT,
+        LONG_TEXT,
+        nested_report(MAX_XML_DEPTH - 6),
+        f"<a:r xmlns:a='{LONGEST_URI}' xmlns='{LONGEST_URI}'><x a:k='1' k='2'/></a:r>".encode(),
+    ],
+    ids=[
+        "sample",
+        "url-as-attribute",
+        "default-namespace",
+        "in-document-error",
+        "report",
+        "escaped-title",
+        "url-attribute",
+        "utf-8-bom",
+        "mixed-content",
+        "prefixed-report",
+        "undeclared-default",
+        "long-text",
+        "deepest",
+        "longest-uri",
+    ],
+)
+def test_builds_the_tree_elementtree_builds(raw: bytes) -> None:
+    # The trusted fixtures of this suite, so ElementTree can serve as the oracle.
+    expected = ET.fromstring(raw)  # nosec B314
+    assert shape(_parse_xml(raw)) == shape(expected)
 
 
 # -- which Expat it parses with -----------------------------------------------
@@ -330,6 +578,9 @@ def test_readme_names_the_same_minimum_and_size_limit() -> None:
     text = " ".join(readme.split())
     assert f"Expat {minimum} or newer" in text
     assert f"an XML document larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in text
+    assert f"namespace URI longer than {MAX_NAMESPACE_URI_CHARS} characters" in text
+    assert f"nests its elements more than {MAX_XML_DEPTH} deep" in text
+    assert f"uses more than {MAX_XML_NAMES} distinct element and attribute names" in text
 
 
 def test_this_python_has_a_supported_expat() -> None:

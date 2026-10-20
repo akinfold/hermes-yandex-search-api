@@ -40,7 +40,13 @@ import httpx
 #: CVE-2023-52425 is bounded, not unreachable. The cap also bounds the time and
 #: memory of any cost in Expat not known yet. pyexpat holds the GIL while it
 #: parses, so a slow parse blocks the whole Hermes process; the cap keeps that
-#: short.
+#: short. The tree built from it stays within a small multiple of the document:
+#: each distinct name is spelled once (_Names) and there are at most
+#: MAX_XML_NAMES of them, and namespace URIs are short ASCII
+#: (MAX_NAMESPACE_URI_CHARS). Without the name limit, 2 MiB that give every
+#: element a new name in a 256-character namespace peaked at about 270 MiB, and
+#: at about 780 MiB with one character outside the Basic Multilingual Plane in
+#: the URI; ElementTree's own parser peaks at about 260 and 510 MiB on them.
 MAX_XML_BYTES = 2 * 1024 * 1024
 
 #: The longest Base64 ``rawData`` that can decode to MAX_XML_BYTES or fewer:
@@ -48,6 +54,31 @@ MAX_XML_BYTES = 2 * 1024 * 1024
 #: decoded with ``validate=True``, which refuses whitespace and anything else
 #: outside the alphabet, so nothing longer can decode to a document under the cap.
 MAX_RAW_DATA_CHARS = 4 * -(-MAX_XML_BYTES // 3)
+
+#: The longest namespace URI _parse_xml accepts, in characters; it must also be
+#: ASCII. Yandex's report declares no namespace at all, and the usual ones are
+#: short, such as "http://www.w3.org/2005/Atom". Every element and attribute in
+#: a namespace carries the URI in its name, and pyexpat builds that name as a new
+#: string for each of them — for attributes before any handler here runs — so
+#: one long URI declared once and used by many short elements or attributes
+#: costs time and memory far beyond the document's size: a 1 MiB URI used by
+#: 20 000 elements takes six seconds to parse, even through ElementTree. Python
+#: stores a string with one character outside the Basic Multilingual Plane at
+#: four bytes per character, hence ASCII only.
+MAX_NAMESPACE_URI_CHARS = 128
+
+#: The most distinct element and attribute names _parse_xml accepts in one
+#: document. Yandex's reports use about thirty. Sharing a name only helps when
+#: it repeats; a document that gives every element a new name in a long
+#: namespace would otherwise still keep one copy of the URI per element.
+MAX_XML_NAMES = 256
+
+#: The deepest nesting of elements _parse_xml accepts. Yandex's report nests
+#: nine deep (yandexsearch, response, results, grouping, group, doc, passages,
+#: passage, hlword). 2 MiB of open tags can nest about 300 000 deep, which took
+#: half a second and twice the peak memory of 2 MiB of elements side by side,
+#: most of the difference in Expat's own record of the open tags.
+MAX_XML_DEPTH = 32
 
 #: The oldest Expat this plugin parses with: a safety margin on top of the
 #: guards in _parse_xml, not a promise that Expat has no bugs. The guards work
@@ -433,6 +464,61 @@ def _clark(name: str) -> str:
     return "{" + name if "}" in name else name
 
 
+class _Names(dict):
+    """Expat's names spelled by :func:`_clark`, one string for each distinct name.
+
+    Every element and attribute in a namespace carries its URI in its name. Spelled
+    afresh for each of them, the names would make the tree hold a copy of the URI
+    per element; shared, as ElementTree's own parser shares them, there is one.
+    At most :data:`MAX_XML_NAMES` distinct names are accepted.
+    """
+
+    def __missing__(self, name: str) -> str:
+        if len(self) >= MAX_XML_NAMES:
+            raise YandexSearchError(
+                f"Rejected Yandex XML response: it uses more than {MAX_XML_NAMES} "
+                "distinct element and attribute names"
+            )
+        spelled = self[name] = _clark(name)
+        return spelled
+
+
+class _Tree:
+    """Expat's element and namespace handlers for one :func:`_parse_xml` call."""
+
+    def __init__(self) -> None:
+        self.builder = ET.TreeBuilder()
+        self.names = _Names()
+        self.depth = 0
+
+    @staticmethod
+    def check_namespace(_prefix: str | None, uri: str | None) -> None:
+        """Expat calls this at each namespace declaration, before the element starts."""
+        if len(uri or "") > MAX_NAMESPACE_URI_CHARS:
+            raise YandexSearchError(
+                "Rejected Yandex XML response: it declares a namespace URI longer than "
+                f"{MAX_NAMESPACE_URI_CHARS} characters"
+            )
+        if uri and not uri.isascii():
+            raise YandexSearchError(
+                "Rejected Yandex XML response: it declares a namespace URI that is not ASCII"
+            )
+
+    def start(self, tag: str, attrib: dict[str, str]) -> None:
+        self.depth += 1
+        if self.depth > MAX_XML_DEPTH:
+            raise YandexSearchError(
+                "Rejected Yandex XML response: its elements are nested more than "
+                f"{MAX_XML_DEPTH} deep"
+            )
+        names = self.names
+        self.builder.start(names[tag], {names[name]: value for name, value in attrib.items()})
+
+    def end(self, tag: str) -> None:
+        self.depth -= 1
+        self.builder.end(self.names[tag])
+
+
 def _refuse_dtd(*_args: object) -> None:
     """Expat calls this at ``<!DOCTYPE``, before it reads any of the DTD."""
     raise YandexSearchError("Rejected unsafe Yandex XML response: it declares a DTD")
@@ -442,30 +528,35 @@ def _parse_xml(raw: bytes) -> ET.Element:
     """Parse an untrusted XML document into the tree ``ElementTree.fromstring`` would build.
 
     Yandex sends UTF-8, so the document must be UTF-8, whatever encoding it
-    declares, and at most :data:`MAX_XML_BYTES` long. Entities can only be
-    declared in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to
-    expand (billion laughs, quadratic blowup) and no external entity or DTD to
-    resolve; Expat itself never opens files or connections. ElementTree's own
-    parser keeps parsing after a handler raises, so Expat is driven here
-    directly: a handler that raises stops it on the spot.
+    declares, and at most :data:`MAX_XML_BYTES` long; its elements may nest at
+    most :data:`MAX_XML_DEPTH` deep, it may use at most :data:`MAX_XML_NAMES`
+    distinct names, and its namespace URIs must be ASCII and at most
+    :data:`MAX_NAMESPACE_URI_CHARS` long. Entities can only be declared
+    in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to expand
+    (billion laughs, quadratic blowup) and no external entity or DTD to resolve;
+    Expat itself never opens files or connections. ElementTree's own parser
+    keeps parsing after a handler raises, so Expat is driven here directly: a
+    handler that raises stops it on the spot.
     """
     _check_expat_version()
     _check_document(raw)
-    builder = ET.TreeBuilder()
+    tree = _Tree()
     # The encoding given here overrides the one the document declares, so Expat
     # never calls back into Python's codecs for an encoding it lacks.
     parser = expat.ParserCreate(encoding="utf-8", namespace_separator="}")
+    # One call for each run of text, as ElementTree's Python parser asks for,
+    # rather than one for each line and each character reference in it.
+    parser.buffer_text = True
     parser.StartDoctypeDeclHandler = _refuse_dtd
-    parser.StartElementHandler = lambda tag, attrib: builder.start(
-        _clark(tag), {_clark(name): value for name, value in attrib.items()}
-    )
-    parser.EndElementHandler = lambda tag: builder.end(_clark(tag))
-    parser.CharacterDataHandler = builder.data
+    parser.StartNamespaceDeclHandler = tree.check_namespace
+    parser.StartElementHandler = tree.start
+    parser.EndElementHandler = tree.end
+    parser.CharacterDataHandler = tree.builder.data
     try:
         parser.Parse(raw, True)
     except expat.ExpatError as exc:
         raise YandexSearchError(f"Could not parse Yandex XML response: {exc}") from exc
-    return builder.close()
+    return tree.builder.close()
 
 
 def _parse_web_xml(raw: bytes) -> list[WebResult]:
@@ -473,7 +564,8 @@ def _parse_web_xml(raw: bytes) -> list[WebResult]:
 
     The document is untrusted: :func:`_parse_xml` refuses any DTD, so a malicious
     response cannot mount an entity-expansion (billion laughs) or external-entity
-    (XXE) attack. It also refuses a document that is too large or not UTF-8, and
+    (XXE) attack. It also refuses a document that is too large, is not UTF-8,
+    nests its elements too deep or declares a namespace URI that is too long, and
     refuses to parse at all on an Expat older than :data:`MIN_EXPAT_VERSION`.
     """
     root = _parse_xml(raw)

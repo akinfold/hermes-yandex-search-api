@@ -52,22 +52,45 @@ def test_search_returns_success_envelope(
     assert set(web[0]) == {"title", "url", "description", "position"}
 
 
+#: A namespace URI one character longer than _parse_xml accepts.
+TOO_LONG_URI = "urn:" + "u" * (client_module.MAX_NAMESPACE_URI_CHARS - 3)
+
+#: Nested inside the report's root and response, this many elements one in
+#: another go two levels deeper than _parse_xml accepts.
+DEEP = client_module.MAX_XML_DEPTH
+
+
 @pytest.mark.parametrize(
-    ("dtd", "expat_version", "error"),
+    ("xml", "expat_version", "error"),
     [
-        ("<!DOCTYPE r [<!ENTITY e 'x'>]>", None, "it declares a DTD"),
-        ("", (2, 4, 4), "this Python uses Expat 2.4.4, older than 2.4.5"),
+        (
+            SAMPLE_WEB_XML.replace("?>", "?><!DOCTYPE r [<!ENTITY e 'x'>]>", 1),
+            None,
+            "it declares a DTD",
+        ),
+        (SAMPLE_WEB_XML, (2, 4, 4), "this Python uses Expat 2.4.4, older than 2.4.5"),
+        (
+            SAMPLE_WEB_XML.replace("<reqid>", f"<reqid xmlns='{TOO_LONG_URI}'>", 1),
+            None,
+            "it declares a namespace URI longer than "
+            f"{client_module.MAX_NAMESPACE_URI_CHARS} characters",
+        ),
+        (
+            SAMPLE_WEB_XML.replace("<reqid>", "<x>" * DEEP + "</x>" * DEEP + "<reqid>", 1),
+            None,
+            f"its elements are nested more than {client_module.MAX_XML_DEPTH} deep",
+        ),
     ],
-    ids=["dtd", "old-expat"],
+    ids=["dtd", "old-expat", "long-namespace", "too-deep"],
 )
 def test_search_reports_xml_it_will_not_parse(
     monkeypatch: pytest.MonkeyPatch,
     yandex_env: None,
-    dtd: str,
+    xml: str,
     expat_version: tuple[int, int, int] | None,
     error: str,
 ) -> None:
-    raw = encode_raw_data(SAMPLE_WEB_XML.replace("?>", "?>" + dtd, 1))
+    raw = encode_raw_data(xml)
     client = _client_with(httpx.MockTransport(lambda r: httpx.Response(200, json={"rawData": raw})))
     monkeypatch.setattr(config, "build_client", lambda: client)
     if expat_version:

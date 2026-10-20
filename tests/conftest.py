@@ -42,6 +42,25 @@ SAMPLE_WEB_XML = """<?xml version="1.0" encoding="utf-8"?>
 </yandexsearch>
 """
 
+#: A result whose URL is an attribute of ``<doc>`` rather than a child.
+URL_ATTRIBUTE_XML = (
+    "<yandexsearch><response><results><grouping><group>"
+    "<doc url='https://attr.example/x'><title>Attr URL</title></doc>"
+    "</group></grouping></results></response></yandexsearch>"
+)
+
+#: The report in a default namespace, which the parser strips.
+DEFAULT_NAMESPACE_XML = (
+    "<yandexsearch xmlns='urn:yandex:search'><response><results><grouping>"
+    "<group><doc><url>https://ns.example/y</url><title>NS Result</title></doc>"
+    "</group></grouping></results></response></yandexsearch>"
+)
+
+#: An error Yandex reports inside the document, with HTTP 200.
+IN_DOCUMENT_ERROR_XML = (
+    "<yandexsearch><response><error>Search backend unavailable</error></response></yandexsearch>"
+)
+
 SAMPLE_GEN_RESPONSE = {
     "message": {"role": "ROLE_ASSISTANT", "content": "Paris is the capital of France."},
     "sources": [
