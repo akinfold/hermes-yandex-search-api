@@ -13,7 +13,13 @@ from hermes_yandex_search.client import (
     _parse_web_xml,
 )
 
-from .conftest import SAMPLE_WEB_XML, encode_raw_data
+from .conftest import (
+    DEFAULT_NAMESPACE_XML,
+    IN_DOCUMENT_ERROR_XML,
+    SAMPLE_WEB_XML,
+    URL_ATTRIBUTE_XML,
+    encode_raw_data,
+)
 
 
 def make_client(handler: httpx.MockTransport | None = None, **kwargs) -> YandexSearchClient:
@@ -149,35 +155,21 @@ def test_raw_data_survives_roundtrip() -> None:
 
 
 def test_parse_web_xml_url_as_attribute() -> None:
-    xml = (
-        "<yandexsearch><response><results><grouping><group>"
-        "<doc url='https://attr.example/x'><title>Attr URL</title></doc>"
-        "</group></grouping></results></response></yandexsearch>"
-    )
-    results = _parse_web_xml(xml.encode("utf-8"))
+    results = _parse_web_xml(URL_ATTRIBUTE_XML.encode("utf-8"))
     assert len(results) == 1
     assert results[0].url == "https://attr.example/x"
     assert results[0].title == "Attr URL"
 
 
 def test_parse_web_xml_is_namespace_tolerant() -> None:
-    xml = (
-        "<yandexsearch xmlns='urn:yandex:search'><response><results><grouping>"
-        "<group><doc><url>https://ns.example/y</url><title>NS Result</title></doc>"
-        "</group></grouping></results></response></yandexsearch>"
-    )
-    results = _parse_web_xml(xml.encode("utf-8"))
+    results = _parse_web_xml(DEFAULT_NAMESPACE_XML.encode("utf-8"))
     assert len(results) == 1
     assert results[0].url == "https://ns.example/y"
 
 
 def test_parse_web_xml_raises_on_in_document_error() -> None:
-    xml = (
-        "<yandexsearch><response><error>Search backend unavailable</error>"
-        "</response></yandexsearch>"
-    )
     with pytest.raises(YandexSearchError, match="Search backend unavailable"):
-        _parse_web_xml(xml.encode("utf-8"))
+        _parse_web_xml(IN_DOCUMENT_ERROR_XML.encode("utf-8"))
 
 
 def test_web_search_sends_optional_params(web_raw_data: str) -> None:

@@ -8,7 +8,10 @@ import socket
 import tracemalloc
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from xml.etree import ElementTree as ET
+
+# ElementTree parses only this suite's own literals, as the oracle _parse_xml's
+# tree is compared with and the yardstick its memory is measured against.
+from xml.etree import ElementTree as ET  # nosec B405
 
 import httpx
 import pytest
@@ -26,7 +29,12 @@ from hermes_yandex_search.client import (
     _parse_xml,
 )
 
-from .conftest import SAMPLE_WEB_XML
+from .conftest import (
+    DEFAULT_NAMESPACE_XML,
+    IN_DOCUMENT_ERROR_XML,
+    SAMPLE_WEB_XML,
+    URL_ATTRIBUTE_XML,
+)
 
 #: What _parse_xml says when it refuses a DTD. Expat's own limits (on entity
 #: amplification, for one) fail with other messages, so matching this proves the
@@ -226,7 +234,7 @@ def test_the_size_limit_leaves_a_margin_over_real_reports() -> None:
     assert MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
-# -- names and namespaces cost what ElementTree's do ---------------------------
+# -- names and namespaces cost what ElementTree's do --------------------------
 
 
 def test_elements_share_one_string_for_each_name() -> None:
@@ -279,7 +287,7 @@ def test_accepts_a_namespace_uri_at_the_length_limit() -> None:
     assert root.tag == "{" + LONGEST_URI + "}r"
 
 
-# -- nesting depth -------------------------------------------------------------
+# -- nesting depth ------------------------------------------------------------
 
 
 def nested_report(levels: int) -> bytes:
@@ -313,7 +321,7 @@ def test_the_depth_limit_leaves_a_margin_over_real_reports() -> None:
     assert MAX_XML_DEPTH >= 3 * 9
 
 
-# -- text --------------------------------------------------------------------
+# -- text ---------------------------------------------------------------------
 
 
 def test_text_costs_about_what_it_takes_in_the_document() -> None:
@@ -379,12 +387,24 @@ def test_an_undeclared_entity_is_a_parse_error() -> None:
         _parse_web_xml(report(title="&xxe;"))
 
 
+#: Namespaced and plain names, a comment, a processing instruction, an
+#: escaped character and a CDATA section.
+MIXED_CONTENT = (
+    b"<?xml version='1.0' encoding='utf-8'?>"
+    b"<y:a xmlns:y='urn:y' xmlns='urn:d' y:id='1' plain='2'>"
+    b"<b>\xe2\x82\xac <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
+)
+
+#: A report whose every name has a prefix.
+PREFIXED_REPORT = (
+    b"<y:yandexsearch xmlns:y='urn:yandex'><y:response><y:results><y:grouping>"
+    b"<y:group><y:doc><y:url>https://ns.example/z</y:url><y:title>Z</y:title></y:doc>"
+    b"</y:group></y:grouping></y:results></y:response></y:yandexsearch>"
+)
+
+
 def test_builds_the_tree_elementtree_would() -> None:
-    root = _parse_xml(
-        b"<?xml version='1.0' encoding='utf-8'?>"
-        b"<y:a xmlns:y='urn:y' xmlns='urn:d' y:id='1' plain='2'>"
-        b"<b>\xe2\x82\xac <!-- dropped --><?dropped too?>&amp;<![CDATA[<x>]]></b>tail</y:a>"
-    )
+    root = _parse_xml(MIXED_CONTENT)
     assert root.tag == "{urn:y}a"
     assert root.attrib == {"{urn:y}id": "1", "plain": "2"}
     (child,) = list(root)
@@ -394,13 +414,69 @@ def test_builds_the_tree_elementtree_would() -> None:
 
 
 def test_parses_a_report_with_prefixed_names() -> None:
-    xml = (
-        "<y:yandexsearch xmlns:y='urn:yandex'><y:response><y:results><y:grouping>"
-        "<y:group><y:doc><y:url>https://ns.example/z</y:url><y:title>Z</y:title></y:doc>"
-        "</y:group></y:grouping></y:results></y:response></y:yandexsearch>"
-    )
-    (result,) = _parse_web_xml(xml.encode("utf-8"))
+    (result,) = _parse_web_xml(PREFIXED_REPORT)
     assert (result.url, result.title) == ("https://ns.example/z", "Z")
+
+
+#: The default namespace undeclared on a child: Expat reports that URI as None.
+UNDECLARED_DEFAULT = b"<r xmlns='urn:d'><x xmlns=''><y/></x><z/></r>"
+
+#: Line breaks of every kind and character references, in runs of text longer
+#: than the buffer Expat fills before it calls back.
+LONG_TEXT = (
+    "<r>" + "ab\r\ncd\re&#10;&#x20AC;\u0436\n" * 2_000 + "<x/>" + "tail " * 5_000 + "</r>"
+).encode()
+
+
+def shape(element: ET.Element) -> tuple:
+    return (
+        element.tag,
+        list(element.attrib.items()),
+        element.text,
+        element.tail,
+        [shape(child) for child in element],
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        SAMPLE_WEB_XML.encode(),
+        URL_ATTRIBUTE_XML.encode(),
+        DEFAULT_NAMESPACE_XML.encode(),
+        IN_DOCUMENT_ERROR_XML.encode(),
+        report(),
+        report(title="&lt;b&gt; &amp; \u20ac"),
+        report(url_attr="https://x.example/?a=1&amp;b=2"),
+        codecs.BOM_UTF8 + report(),
+        MIXED_CONTENT,
+        PREFIXED_REPORT,
+        UNDECLARED_DEFAULT,
+        LONG_TEXT,
+        nested_report(MAX_XML_DEPTH - 6),
+        f"<a:r xmlns:a='{LONGEST_URI}' xmlns='{LONGEST_URI}'><x a:k='1' k='2'/></a:r>".encode(),
+    ],
+    ids=[
+        "sample",
+        "url-as-attribute",
+        "default-namespace",
+        "in-document-error",
+        "report",
+        "escaped-title",
+        "url-attribute",
+        "utf-8-bom",
+        "mixed-content",
+        "prefixed-report",
+        "undeclared-default",
+        "long-text",
+        "deepest",
+        "longest-uri",
+    ],
+)
+def test_builds_the_tree_elementtree_builds(raw: bytes) -> None:
+    # The trusted fixtures of this suite, so ElementTree can serve as the oracle.
+    expected = ET.fromstring(raw)  # nosec B314
+    assert shape(_parse_xml(raw)) == shape(expected)
 
 
 # -- which Expat it parses with -----------------------------------------------
