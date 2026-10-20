@@ -5,13 +5,16 @@ from __future__ import annotations
 import base64
 import codecs
 import socket
-from collections.abc import Iterator
+import tracemalloc
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import httpx
 import pytest
 from hermes_yandex_search import client
 from hermes_yandex_search.client import (
+    MAX_NAMESPACE_URI_CHARS,
     MAX_RAW_DATA_CHARS,
     MAX_XML_BYTES,
     MIN_EXPAT_VERSION,
@@ -30,6 +33,14 @@ from .conftest import SAMPLE_WEB_XML
 DTD_REFUSED = "Rejected unsafe Yandex XML response: it declares a DTD"
 
 NOT_UTF8 = "Rejected Yandex XML response: it is not UTF-8"
+
+LONG_NAMESPACE = (
+    "Rejected Yandex XML response: it declares a namespace URI longer than "
+    f"{MAX_NAMESPACE_URI_CHARS} characters"
+)
+
+#: A namespace URI exactly as long as _parse_xml allows.
+LONGEST_URI = "urn:" + "u" * (MAX_NAMESPACE_URI_CHARS - 4)
 
 FILE_TEXT = "the contents of a local file"
 
@@ -212,6 +223,59 @@ def test_the_size_limit_leaves_a_margin_over_real_reports() -> None:
     assert MAX_XML_BYTES <= 4 * 1024 * 1024
 
 
+# -- names and namespaces cost what ElementTree's do ---------------------------
+
+
+def test_elements_share_one_string_for_each_name() -> None:
+    # Each element and attribute in a namespace carries its URI in its name.
+    # ElementTree's own parser keeps one string per distinct name; one built
+    # afresh per element would hold a copy of the URI for every element.
+    elements = "<a:x a:k='1' plain='2'/>" * 3
+    root = _parse_xml(f"<r xmlns:a='{LONGEST_URI}'>{elements}</r>".encode())
+    assert [element.tag for element in root] == ["{" + LONGEST_URI + "}x"] * 3
+    assert len({id(element.tag) for element in root}) == 1
+    for name in ("{" + LONGEST_URI + "}k", "plain"):
+        keys = [next(key for key in element.attrib if key == name) for element in root]
+        assert len({id(key) for key in keys}) == 1
+
+
+def peak_memory(parse: Callable[[bytes], ET.Element], raw: bytes) -> int:
+    """The most memory *parse* holds at once while it parses *raw*, in bytes."""
+    tracemalloc.start()
+    try:
+        parse(raw)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_a_namespace_used_by_many_elements_costs_what_elementtree_pays() -> None:
+    # 20 000 short elements and attributes in a namespace as long as allowed.
+    # With a name built afresh for each of them the tree took 2.7 times the
+    # memory of ElementTree's; with shared names it takes the same.
+    elements = "<a:x a:k='1'/>" * 20_000
+    raw = f"<a:r xmlns:a='{LONGEST_URI}'>{elements}</a:r>".encode()
+    assert peak_memory(_parse_xml, raw) <= 1.25 * peak_memory(ET.fromstring, raw)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [f"xmlns='{LONGEST_URI}u'", f"xmlns:a='{LONGEST_URI}u'"],
+    ids=["default", "prefixed"],
+)
+def test_refuses_a_namespace_uri_over_the_length_limit(declaration: str) -> None:
+    # Declared on an element deep inside, and never used: refused all the same.
+    raw = report().replace(b"<title>", f"<title {declaration}>".encode(), 1)
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_web_xml(raw)
+    assert str(exc_info.value) == LONG_NAMESPACE
+
+
+def test_accepts_a_namespace_uri_at_the_length_limit() -> None:
+    root = _parse_xml(f"<a:r xmlns:a='{LONGEST_URI}' xmlns='{LONGEST_URI}'/>".encode())
+    assert root.tag == "{" + LONGEST_URI + "}r"
+
+
 # -- UTF-8 only ----------------------------------------------------------------
 
 #: A lone UTF-16 high surrogate followed by "A": Expat before 2.8.5 decodes the
@@ -330,6 +394,7 @@ def test_readme_names_the_same_minimum_and_size_limit() -> None:
     text = " ".join(readme.split())
     assert f"Expat {minimum} or newer" in text
     assert f"an XML document larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in text
+    assert f"namespace URI longer than {MAX_NAMESPACE_URI_CHARS} characters" in text
 
 
 def test_this_python_has_a_supported_expat() -> None:
