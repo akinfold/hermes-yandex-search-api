@@ -55,6 +55,10 @@ def test_search_returns_success_envelope(
 #: A namespace URI one character longer than _parse_xml accepts.
 TOO_LONG_URI = "urn:" + "u" * (client_module.MAX_NAMESPACE_URI_CHARS - 3)
 
+#: Nested inside the report's root and response, this many elements one in
+#: another go two levels deeper than _parse_xml accepts.
+DEEP = client_module.MAX_XML_DEPTH
+
 
 @pytest.mark.parametrize(
     ("xml", "expat_version", "error"),
@@ -71,8 +75,13 @@ TOO_LONG_URI = "urn:" + "u" * (client_module.MAX_NAMESPACE_URI_CHARS - 3)
             "it declares a namespace URI longer than "
             f"{client_module.MAX_NAMESPACE_URI_CHARS} characters",
         ),
+        (
+            SAMPLE_WEB_XML.replace("<reqid>", "<x>" * DEEP + "</x>" * DEEP + "<reqid>", 1),
+            None,
+            f"its elements are nested more than {client_module.MAX_XML_DEPTH} deep",
+        ),
     ],
-    ids=["dtd", "old-expat", "long-namespace"],
+    ids=["dtd", "old-expat", "long-namespace", "too-deep"],
 )
 def test_search_reports_xml_it_will_not_parse(
     monkeypatch: pytest.MonkeyPatch,

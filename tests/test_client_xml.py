@@ -17,6 +17,7 @@ from hermes_yandex_search.client import (
     MAX_NAMESPACE_URI_CHARS,
     MAX_RAW_DATA_CHARS,
     MAX_XML_BYTES,
+    MAX_XML_DEPTH,
     MIN_EXPAT_VERSION,
     WebResult,
     YandexSearchClient,
@@ -38,6 +39,8 @@ LONG_NAMESPACE = (
     "Rejected Yandex XML response: it declares a namespace URI longer than "
     f"{MAX_NAMESPACE_URI_CHARS} characters"
 )
+
+TOO_DEEP = f"Rejected Yandex XML response: its elements are nested more than {MAX_XML_DEPTH} deep"
 
 #: A namespace URI exactly as long as _parse_xml allows.
 LONGEST_URI = "urn:" + "u" * (MAX_NAMESPACE_URI_CHARS - 4)
@@ -276,6 +279,40 @@ def test_accepts_a_namespace_uri_at_the_length_limit() -> None:
     assert root.tag == "{" + LONGEST_URI + "}r"
 
 
+# -- nesting depth -------------------------------------------------------------
+
+
+def nested_report(levels: int) -> bytes:
+    """report(), with *levels* elements nested one in another inside its ``doc``."""
+    return report().replace(b"<title>", b"<x>" * levels + b"</x>" * levels + b"<title>", 1)
+
+
+def test_refuses_elements_nested_deeper_than_the_limit() -> None:
+    # yandexsearch, response, results, grouping, group and doc hold the nested elements.
+    (result,) = _parse_web_xml(nested_report(MAX_XML_DEPTH - 6))
+    assert result.title == "Title"
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_web_xml(nested_report(MAX_XML_DEPTH - 5))
+    assert str(exc_info.value) == TOO_DEEP
+
+
+def test_elements_side_by_side_do_not_add_to_the_depth() -> None:
+    root = _parse_xml(b"<r>" + b"<x><y/></x>" * (MAX_XML_DEPTH + 1) + b"</r>")
+    assert len(root) == MAX_XML_DEPTH + 1
+
+
+def depth(element: ET.Element) -> int:
+    return 1 + max((depth(child) for child in element), default=0)
+
+
+def test_the_depth_limit_leaves_a_margin_over_real_reports() -> None:
+    # The sample follows a live report down to its deepest element, a highlighted
+    # word in a passage: yandexsearch, response, results, grouping, group, doc,
+    # passages, passage, hlword.
+    assert depth(_parse_xml(SAMPLE_WEB_XML.encode())) == 9
+    assert MAX_XML_DEPTH >= 3 * 9
+
+
 # -- UTF-8 only ----------------------------------------------------------------
 
 #: A lone UTF-16 high surrogate followed by "A": Expat before 2.8.5 decodes the
@@ -395,6 +432,7 @@ def test_readme_names_the_same_minimum_and_size_limit() -> None:
     assert f"Expat {minimum} or newer" in text
     assert f"an XML document larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in text
     assert f"namespace URI longer than {MAX_NAMESPACE_URI_CHARS} characters" in text
+    assert f"nests its elements more than {MAX_XML_DEPTH} deep" in text
 
 
 def test_this_python_has_a_supported_expat() -> None:

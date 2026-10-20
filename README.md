@@ -127,7 +127,8 @@ default).
   the older layout, run `~/.hermes/bin/uv python install 3.11` and re-run the
   v2026.9.24 installer, which then builds its venv on uv's Python.
 - The plugin parses Yandex's XML with the standard library. It refuses, saying
-  why, a response that declares a DTD, is not UTF-8 or declares a namespace URI
+  why, a response that declares a DTD, is not UTF-8, nests its elements more
+  than 32 deep (Yandex's report nests nine deep) or declares a namespace URI
   longer than 256 characters (Yandex's report declares none), and an XML
   document larger than 2 MiB; the largest live 100-result report measured came
   to about 445 KB.
