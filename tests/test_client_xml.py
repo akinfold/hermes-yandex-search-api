@@ -21,6 +21,7 @@ from hermes_yandex_search.client import (
     MAX_RAW_DATA_CHARS,
     MAX_XML_BYTES,
     MAX_XML_DEPTH,
+    MAX_XML_NAMES,
     MIN_EXPAT_VERSION,
     WebResult,
     YandexSearchClient,
@@ -287,6 +288,64 @@ def test_accepts_a_namespace_uri_at_the_length_limit() -> None:
     assert root.tag == "{" + LONGEST_URI + "}r"
 
 
+NOT_ASCII_NAMESPACE = "Rejected Yandex XML response: it declares a namespace URI that is not ASCII"
+
+TOO_MANY_NAMES = (
+    f"Rejected Yandex XML response: it uses more than {MAX_XML_NAMES} distinct element "
+    "and attribute names"
+)
+
+
+@pytest.mark.parametrize("uri", ["urn:caf\u00e9", "urn:\U0001f600"], ids=["latin-1", "astral"])
+def test_refuses_a_namespace_uri_that_is_not_ascii(uri: str) -> None:
+    # A name holding a character outside the Basic Multilingual Plane is stored at
+    # four bytes per character, so the length limit alone would allow four times
+    # the memory.
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(f"<r xmlns:a='{uri}'><a:x/></r>".encode())
+    assert str(exc_info.value) == NOT_ASCII_NAMESPACE
+
+
+def distinct_names(count: int, uri: str = LONGEST_URI) -> bytes:
+    """A document with the root and *count* - 1 elements, each with a new name."""
+    elements = "".join(f"<a:n{index}/>" for index in range(count - 1))
+    return f"<a:r xmlns:a='{uri}'>{elements}</a:r>".encode()
+
+
+def test_accepts_distinct_names_up_to_the_limit() -> None:
+    assert len(_parse_xml(distinct_names(MAX_XML_NAMES))) == MAX_XML_NAMES - 1
+
+
+def test_refuses_more_distinct_names_than_the_limit() -> None:
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(distinct_names(MAX_XML_NAMES + 1))
+    assert str(exc_info.value) == TOO_MANY_NAMES
+
+
+def test_attribute_names_count_toward_the_limit() -> None:
+    attributes = " ".join(f"a:k{index}='1'" for index in range(MAX_XML_NAMES))
+    with pytest.raises(YandexSearchError) as exc_info:
+        _parse_xml(f"<a:r xmlns:a='{LONGEST_URI}' {attributes}/>".encode())
+    assert str(exc_info.value) == TOO_MANY_NAMES
+
+
+def test_a_new_name_for_every_element_costs_little() -> None:
+    # Sharing names helps only when they repeat: 2 MiB of elements that each
+    # have a new name in the longest namespace allowed would otherwise keep a
+    # copy of the URI per element, hundreds of MiB. The name limit stops it early.
+    count = (MAX_XML_BYTES - 200) // len("<a:n000000/>")
+    raw = distinct_names(count)
+    assert len(raw) <= MAX_XML_BYTES
+    tracemalloc.start()
+    try:
+        with pytest.raises(YandexSearchError):
+            _parse_xml(raw)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024
+
+
 # -- nesting depth ------------------------------------------------------------
 
 
@@ -521,6 +580,7 @@ def test_readme_names_the_same_minimum_and_size_limit() -> None:
     assert f"an XML document larger than {MAX_XML_BYTES // (1024 * 1024)} MiB" in text
     assert f"namespace URI longer than {MAX_NAMESPACE_URI_CHARS} characters" in text
     assert f"nests its elements more than {MAX_XML_DEPTH} deep" in text
+    assert f"uses more than {MAX_XML_NAMES} distinct element and attribute names" in text
 
 
 def test_this_python_has_a_supported_expat() -> None:

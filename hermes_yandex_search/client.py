@@ -40,14 +40,13 @@ import httpx
 #: CVE-2023-52425 is bounded, not unreachable. The cap also bounds the time and
 #: memory of any cost in Expat not known yet. pyexpat holds the GIL while it
 #: parses, so a slow parse blocks the whole Hermes process; the cap keeps that
-#: short. The tree built from it grows with the document too, not with how
-#: often a name is used: each distinct name is spelled once (_Names), and no
-#: namespace URI is longer than MAX_NAMESPACE_URI_CHARS. A hostile document still
-#: costs many times its size: 2 MiB that give every element a new name in a
-#: namespace at that limit peak at about 270 MiB, and at about 780 MiB when the
-#: URI holds a character outside the Basic Multilingual Plane, since Python then
-#: stores every such name in four bytes a character. ElementTree's own parser
-#: peaks at about 260 and 510 MiB on the same documents.
+#: short. The tree built from it stays within a small multiple of the document:
+#: each distinct name is spelled once (_Names) and there are at most
+#: MAX_XML_NAMES of them, and namespace URIs are short ASCII
+#: (MAX_NAMESPACE_URI_CHARS). Without the name limit, 2 MiB that give every
+#: element a new name in a 256-character namespace peaked at about 270 MiB, and
+#: at about 780 MiB with one character outside the Basic Multilingual Plane in
+#: the URI; ElementTree's own parser peaks at about 260 and 510 MiB on them.
 MAX_XML_BYTES = 2 * 1024 * 1024
 
 #: The longest Base64 ``rawData`` that can decode to MAX_XML_BYTES or fewer:
@@ -56,14 +55,23 @@ MAX_XML_BYTES = 2 * 1024 * 1024
 #: outside the alphabet, so nothing longer can decode to a document under the cap.
 MAX_RAW_DATA_CHARS = 4 * -(-MAX_XML_BYTES // 3)
 
-#: The longest namespace URI _parse_xml accepts, in characters. Yandex's report
-#: declares no namespace at all, and the usual ones are short, such as
-#: "http://www.w3.org/2005/Atom". Every element and attribute in a namespace
-#: carries the URI in its name, and pyexpat builds that name as a new string for
-#: each of them before handing it over, so one long URI declared once and used
-#: by many short elements costs time far beyond the document's size: a 1 MiB URI
-#: used by 20 000 elements takes six seconds to parse, even through ElementTree.
-MAX_NAMESPACE_URI_CHARS = 256
+#: The longest namespace URI _parse_xml accepts, in characters; it must also be
+#: ASCII. Yandex's report declares no namespace at all, and the usual ones are
+#: short, such as "http://www.w3.org/2005/Atom". Every element and attribute in
+#: a namespace carries the URI in its name, and pyexpat builds that name as a new
+#: string for each of them — for attributes before any handler here runs — so
+#: one long URI declared once and used by many short elements or attributes
+#: costs time and memory far beyond the document's size: a 1 MiB URI used by
+#: 20 000 elements takes six seconds to parse, even through ElementTree. Python
+#: stores a string with one character outside the Basic Multilingual Plane at
+#: four bytes per character, hence ASCII only.
+MAX_NAMESPACE_URI_CHARS = 128
+
+#: The most distinct element and attribute names _parse_xml accepts in one
+#: document. Yandex's reports use about thirty. Sharing a name only helps when
+#: it repeats; a document that gives every element a new name in a long
+#: namespace would otherwise still keep one copy of the URI per element.
+MAX_XML_NAMES = 256
 
 #: The deepest nesting of elements _parse_xml accepts. Yandex's report nests
 #: nine deep (yandexsearch, response, results, grouping, group, doc, passages,
@@ -462,9 +470,15 @@ class _Names(dict):
     Every element and attribute in a namespace carries its URI in its name. Spelled
     afresh for each of them, the names would make the tree hold a copy of the URI
     per element; shared, as ElementTree's own parser shares them, there is one.
+    At most :data:`MAX_XML_NAMES` distinct names are accepted.
     """
 
     def __missing__(self, name: str) -> str:
+        if len(self) >= MAX_XML_NAMES:
+            raise YandexSearchError(
+                f"Rejected Yandex XML response: it uses more than {MAX_XML_NAMES} "
+                "distinct element and attribute names"
+            )
         spelled = self[name] = _clark(name)
         return spelled
 
@@ -484,6 +498,10 @@ class _Tree:
             raise YandexSearchError(
                 "Rejected Yandex XML response: it declares a namespace URI longer than "
                 f"{MAX_NAMESPACE_URI_CHARS} characters"
+            )
+        if uri and not uri.isascii():
+            raise YandexSearchError(
+                "Rejected Yandex XML response: it declares a namespace URI that is not ASCII"
             )
 
     def start(self, tag: str, attrib: dict[str, str]) -> None:
@@ -511,8 +529,9 @@ def _parse_xml(raw: bytes) -> ET.Element:
 
     Yandex sends UTF-8, so the document must be UTF-8, whatever encoding it
     declares, and at most :data:`MAX_XML_BYTES` long; its elements may nest at
-    most :data:`MAX_XML_DEPTH` deep, and none of its namespace URIs may be
-    longer than :data:`MAX_NAMESPACE_URI_CHARS`. Entities can only be declared
+    most :data:`MAX_XML_DEPTH` deep, it may use at most :data:`MAX_XML_NAMES`
+    distinct names, and its namespace URIs must be ASCII and at most
+    :data:`MAX_NAMESPACE_URI_CHARS` long. Entities can only be declared
     in a DTD, so refusing the DTD at ``<!DOCTYPE`` leaves no entity to expand
     (billion laughs, quadratic blowup) and no external entity or DTD to resolve;
     Expat itself never opens files or connections. ElementTree's own parser

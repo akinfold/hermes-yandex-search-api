@@ -34,8 +34,9 @@ The plugin needs nothing beyond `httpx` and the standard library: the
 recommended installs copy only the plugin directory, so nothing else would be
 installed. Keep it that way. Parse XML only through `_parse_xml` in
 `client.py`. It refuses any DTD, any document that is not UTF-8 or is larger
-than `MAX_XML_BYTES`, any element nested deeper than `MAX_XML_DEPTH` and any
-namespace URI longer than `MAX_NAMESPACE_URI_CHARS`, and refuses to parse at
+than `MAX_XML_BYTES`, any element nested deeper than `MAX_XML_DEPTH`, more than
+`MAX_XML_NAMES` distinct names, and any namespace URI longer than
+`MAX_NAMESPACE_URI_CHARS` or not in ASCII, and refuses to parse at
 all on an Expat older than `MIN_EXPAT_VERSION`. It spells each distinct element
 and attribute name once, as ElementTree's own parser does, so a namespace URI
 is not copied into every element that uses it.
