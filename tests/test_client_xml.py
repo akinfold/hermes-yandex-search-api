@@ -313,6 +313,18 @@ def test_the_depth_limit_leaves_a_margin_over_real_reports() -> None:
     assert MAX_XML_DEPTH >= 3 * 9
 
 
+# -- text --------------------------------------------------------------------
+
+
+def test_text_costs_about_what_it_takes_in_the_document() -> None:
+    # Unbuffered, Expat calls back once per line and per character reference,
+    # and the tree keeps every piece until its text is read: 100 000 short lines
+    # took 21 to 24 times their size, 2 MiB of them 42 MiB and a quarter second.
+    raw = ("<r>" + "ab\n" * 100_000 + "</r>").encode()
+    assert peak_memory(_parse_xml, raw) <= 4 * len(raw)
+    assert _parse_xml(raw).text == "ab\n" * 100_000
+
+
 # -- UTF-8 only ----------------------------------------------------------------
 
 #: A lone UTF-16 high surrogate followed by "A": Expat before 2.8.5 decodes the
