@@ -42,7 +42,12 @@ import httpx
 #: parses, so a slow parse blocks the whole Hermes process; the cap keeps that
 #: short. The tree built from it grows with the document too, not with how
 #: often a name is used: each distinct name is spelled once (_Names), and no
-#: namespace URI is longer than MAX_NAMESPACE_URI_CHARS.
+#: namespace URI is longer than MAX_NAMESPACE_URI_CHARS. A hostile document still
+#: costs many times its size: 2 MiB that give every element a new name in a
+#: namespace at that limit peak at about 270 MiB, and at about 780 MiB when the
+#: URI holds a character outside the Basic Multilingual Plane, since Python then
+#: stores every such name in four bytes a character. ElementTree's own parser
+#: peaks at about 260 and 510 MiB on the same documents.
 MAX_XML_BYTES = 2 * 1024 * 1024
 
 #: The longest Base64 ``rawData`` that can decode to MAX_XML_BYTES or fewer:
