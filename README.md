@@ -7,6 +7,8 @@
 [![CodeFactor](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api/badge)](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+![Yandex Search for Hermes Agent](https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/main/docs/banner.png)
+
 **Give your [Hermes Agent](https://hermes-agent.nousresearch.com) first-class
 Yandex search.** This plugin wires the
 [Yandex Search API](https://aistudio.yandex.ru/docs/ru/search-api/concepts/) into
@@ -19,6 +21,22 @@ have in Yandex Cloud.
   model to learn.
 - 💬 **`yandex_generative_search` tool** — a single grounded answer synthesised
   from live web sources, with the source URLs it cites.
+
+## Security and disclosures
+
+This is an independent community plugin, not affiliated with Yandex.
+
+- **Network and credentials.** Web-search queries and generative-search
+  questions go to `searchapi.api.cloud.yandex.net`, or the endpoint in
+  `YANDEX_SEARCH_API_URL`, with `YANDEX_API_KEY` and `YANDEX_FOLDER_ID`
+  supplied through Hermes.
+- **Billing.** Both search modes use the paid Yandex Cloud Search API.
+  Requests are billed to the folder that owns the key. See
+  [About the Yandex Search API](#about-the-yandex-search-api) for pricing and
+  quota references.
+- **Other activity.** The plugin contacts no other endpoint and has no
+  telemetry, local file access, shell access or background process. It obtains
+  credentials through Hermes and does not maintain a separate credential store.
 
 ## Quick start
 
