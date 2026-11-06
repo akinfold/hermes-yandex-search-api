@@ -1,4 +1,6 @@
-# hermes-yandex-search-api
+![Yandex Search API for Hermes Agent](https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/main/docs/banner.png)
+
+# Yandex Search API for Hermes Agent
 
 [![PyPI version](https://img.shields.io/pypi/v/hermes-yandex-search-api.svg)](https://pypi.org/project/hermes-yandex-search-api/)
 [![CI](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
@@ -6,8 +8,9 @@
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/badges/coverage.json&v=1)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api/badge)](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-![Yandex Search for Hermes Agent](https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/main/docs/banner.png)
+[Quick start](#quick-start) · [Features](#why-these-two-search-modes) · [Configuration](#configuration-reference) · [Installation](#installing-the-plugin-into-hermes) · [Security](#security-and-disclosures)
 
 **Give your [Hermes Agent](https://hermes-agent.nousresearch.com) first-class
 Yandex search.** This plugin wires the
