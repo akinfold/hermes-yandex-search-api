@@ -53,6 +53,25 @@ jobs:
           name: release-artifacts
           path: dist
       - run: python -m pip install -e '.[dev]'
+      - name: Prepare legacy system dependencies
+        if: ${{ matrix.hermes == 'legacy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The Azure Ubuntu mirror took about 30 minutes to serve these packages.
+          # Keep Ubuntu's suites and signing keys, but use its main archive.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$source" ] || continue
+            sudo sed -i -E 's@https?://azure\.archive\.ubuntu\.com/ubuntu@https://archive.ubuntu.com/ubuntu@g' "$source"
+          done
+          apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${apt_options[@]}" update
+          # Install real binaries so the unchanged installer can detect them.
+          # Recommended packages include speech models that Hermes does not need.
+          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+            apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg ripgrep
+          rg --version
+          ffmpeg -version
       - name: Install Hermes with its official installer
         uses: ./.github/actions/setup-hermes
         with:
