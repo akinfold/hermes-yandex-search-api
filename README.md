@@ -8,9 +8,9 @@
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/akinfold/hermes-yandex-search-api/badges/coverage.json&v=1)](https://github.com/akinfold/hermes-yandex-search-api/actions/workflows/ci.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api/badge)](https://www.codefactor.io/repository/github/akinfold/hermes-yandex-search-api)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/akinfold/hermes-yandex-search-api/blob/main/LICENSE)
 
-[Quick start](#quick-start) · [Features](#why-these-two-search-modes) · [Configuration](#configuration-reference) · [Installation](#installing-the-plugin-into-hermes) · [Security](#security-and-disclosures)
+[Quick start](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#quick-start) · [Features](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#why-these-two-search-modes) · [Configuration](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#configuration-reference) · [Installation](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#installing-the-plugin-into-hermes) · [Security](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#security-and-disclosures)
 
 **Give your [Hermes Agent](https://hermes-agent.nousresearch.com) first-class
 Yandex search.** This plugin wires the
@@ -35,7 +35,7 @@ This is an independent community plugin, not affiliated with Yandex.
   supplied through Hermes.
 - **Billing.** Both search modes use the paid Yandex Cloud Search API.
   Requests are billed to the folder that owns the key. See
-  [About the Yandex Search API](#about-the-yandex-search-api) for pricing and
+  [About the Yandex Search API](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#about-the-yandex-search-api) for pricing and
   quota references.
 - **Other activity.** The plugin contacts no other endpoint and has no
   telemetry, local file access, shell access or background process. It obtains
@@ -69,9 +69,9 @@ plugins:
 That's it — `web_search` now goes through Yandex, and the
 `yandex_generative_search` tool is available to the agent. Don't have an API key
 and folder id yet? See
-[Getting a Yandex Search API token](#getting-a-yandex-search-api-token). Other
+[Getting a Yandex Search API token](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#getting-a-yandex-search-api-token). Other
 ways to install, and how to upgrade: see
-[Installing the plugin into Hermes](#installing-the-plugin-into-hermes).
+[Installing the plugin into Hermes](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#installing-the-plugin-into-hermes).
 
 ## Why these two search modes
 
@@ -222,7 +222,7 @@ hermes plugins enable yandex
 
 Either way you end up with `~/.hermes/plugins/web/yandex/plugin.yaml`. Nothing
 asks for credentials on this path — add them to `~/.hermes/.env` as in the
-[Quick start](#quick-start), and select the backend the same way.
+[Quick start](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#quick-start), and select the backend the same way.
 
 > **Options A and B install no dependencies.** Both copy the plugin's sources
 > only, and the plugin directory declares nothing for Hermes to install. It needs
@@ -270,7 +270,7 @@ A bare `pip install hermes-yandex-search-api` never reached Hermes at all — th
 `pip` on your `PATH` belongs to some other Python.
 
 Nothing asks for credentials on this path — add them to `~/.hermes/.env` as in
-the [Quick start](#quick-start), and select the backend the same way.
+the [Quick start](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#quick-start), and select the backend the same way.
 
 ### Upgrading
 
@@ -330,7 +330,7 @@ checked before every release by installing the build into a real Hermes exactly
 as written here: Hermes v2026.9.24, the latest release, and `main`, each set up
 by its own official installer. The Option C install is checked against Hermes
 v2026.9.24, the last release whose installer builds the older layout. See
-[Checking the install paths](#checking-the-install-paths).
+[Checking the install paths](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#checking-the-install-paths).
 
 ## Configuring the token in Hermes
 
@@ -541,7 +541,7 @@ Environment once:
 
 The `install`-marked tests in `tests/install/` install the built plugin into a
 real Hermes, set up by its official installer, by each option in
-[Installing the plugin into Hermes](#installing-the-plugin-into-hermes) — both
+[Installing the plugin into Hermes](https://github.com/akinfold/hermes-yandex-search-api/blob/main/README.md#installing-the-plugin-into-hermes) — both
 forms of Option B and the upgrades included, running the README's own commands —
 and then ask Hermes what it loaded: the plugin must be listed as enabled, load
 without error, give the agent `yandex_generative_search`, and, with the backend
@@ -566,9 +566,9 @@ Part of a family of Yandex plugins for Hermes Agent:
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
+Contributions are welcome — see [CONTRIBUTING.md](https://github.com/akinfold/hermes-yandex-search-api/blob/main/CONTRIBUTING.md) for the dev
 setup and checks to run.
 
 ## License
 
-[MIT](LICENSE) © Roman Akinfeev
+[MIT](https://github.com/akinfold/hermes-yandex-search-api/blob/main/LICENSE) © Roman Akinfeev
