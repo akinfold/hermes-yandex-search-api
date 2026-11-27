@@ -349,6 +349,10 @@ prompts for both values, because the manifest declares them. Installing any othe
 way, or declining the prompt, leaves you to add them to `~/.hermes/.env` yourself,
 as shown above.
 
+On Hermes 0.23.4 or later, run `hermes plugins config yandex` in a terminal
+to update the API key and folder ID. Hermes saves these values in the
+active profile's `.env` file.
+
 ### Selecting Yandex as the web-search backend
 
 To route Hermes' built-in `web_search` tool to Yandex, set the backend:
