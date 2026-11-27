@@ -8,5 +8,8 @@ provides_web_providers:
 provides_tools:
   - yandex_generative_search
 requires_env:
-  - YANDEX_API_KEY
-  - YANDEX_FOLDER_ID
+  - name: YANDEX_API_KEY
+    description: Yandex Cloud API key with access to Yandex Search API
+    secret: true
+  - name: YANDEX_FOLDER_ID
+    description: Yandex Cloud folder ID for Search API requests
